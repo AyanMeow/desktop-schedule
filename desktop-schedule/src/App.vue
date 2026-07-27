@@ -29,16 +29,22 @@ const theme = computed(() => configStore.config.window.bg_mode);
 const isLight = computed(() => theme.value === 'light');
 
 // 根容器样式：字体由 CSS 变量驱动，子组件用 em 继承
-const rootStyle = computed(() => ({
-  '--app-font-size': `${configStore.config.window.font_size}px`,
-  '--app-font-family': configStore.config.window.font_family,
-  '--app-fg': isLight.value ? '#1a1a2e' : '#f0f0f5',
-  '--app-fg-soft': isLight.value ? 'rgba(26,26,46,0.65)' : 'rgba(240,240,245,0.65)',
-  '--modal-bg': isLight.value ? '#f5f5f0' : '#2a2c3a',
-  fontFamily: configStore.config.window.font_family,
-  fontSize: `${configStore.config.window.font_size}px`,
-  color: isLight.value ? '#1a1a2e' : '#f0f0f5',
-}));
+const rootStyle = computed(() => {
+  const light = isLight.value;
+  // veil：文字背后的磨砂底板。深色主题=深底，浅色=浅底，图片=半透深底
+  const veilColor = light ? 'rgba(245,245,240,0.55)' : 'rgba(20,22,32,0.55)';
+  return {
+    '--app-font-size': `${configStore.config.window.font_size}px`,
+    '--app-font-family': configStore.config.window.font_family,
+    '--app-fg': light ? '#1a1a2e' : '#f0f0f5',
+    '--app-fg-soft': light ? 'rgba(26,26,46,0.65)' : 'rgba(240,240,245,0.65)',
+    '--modal-bg': light ? '#f5f5f0' : '#2a2c3a',
+    '--veil-bg': veilColor,
+    fontFamily: configStore.config.window.font_family,
+    fontSize: `${configStore.config.window.font_size}px`,
+    color: light ? '#1a1a2e' : '#f0f0f5',
+  };
+});
 
 // 背景层样式：透明度只作用于背景，前景文字不受影响
 const bgLayerStyle = computed(() => {
@@ -120,6 +126,9 @@ onMounted(async () => {
   <div class="widget" :style="rootStyle" :data-theme="theme">
     <!-- 背景层：透明度只作用于此层 -->
     <div class="bg-layer" :style="bgLayerStyle"></div>
+
+    <!-- 文字底板层：磨砂玻璃，给文字柔和托底，保证低透明度下清晰 -->
+    <div class="fg-veil"></div>
 
     <!-- 前景内容层（不透明） -->
     <div class="fg">
@@ -219,9 +228,18 @@ html, body, #app {
   background-repeat: no-repeat;
   z-index: 0;
 }
+/* 文字底板层：磨砂玻璃，托底保证可读性。z-index 在背景之上、前景之下 */
+.fg-veil {
+  position: absolute;
+  inset: 0;
+  background: var(--veil-bg);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  z-index: 1;
+}
 .fg {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   height: 100%;
   display: flex;
   flex-direction: column;
