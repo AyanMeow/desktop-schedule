@@ -1,0 +1,227 @@
+<script setup lang="ts">
+import { ref, onMounted, computed } from 'vue';
+import { open } from '@tauri-apps/plugin-dialog';
+import { useConfigStore } from '../stores/config';
+import { api } from '../api';
+import Icon from './Icon.vue';
+
+const configStore = useConfigStore();
+const emit = defineEmits<{ close: [] }>();
+
+const autostart = ref(false);
+const alwaysOnTop = ref(false);
+
+type Theme = 'dark' | 'light' | 'image';
+const theme = computed<Theme>(() => {
+  const m = configStore.config.window.bg_mode;
+  return m === 'image' ? 'image' : (m === 'light' ? 'light' : 'dark');
+});
+
+const fontFamilies = [
+  { label: '系统默认', value: "system-ui, 'Microsoft YaHei', sans-serif" },
+  { label: '微软雅黑', value: "'Microsoft YaHei', sans-serif" },
+  { label: '等线', value: "'DengXian', sans-serif" },
+  { label: '宋体', value: "'SimSun', serif" },
+  { label: '黑体', value: "'SimHei', sans-serif" },
+  { label: '楷体', value: "'KaiTi', serif" },
+];
+
+onMounted(async () => {
+  autostart.value = await api.isAutostartEnabled();
+  alwaysOnTop.value = configStore.config.window.always_on_top;
+});
+
+async function save() { await configStore.save(); }
+async function onOpacity() { await save(); }
+async function onFont() { await save(); }
+
+async function onTop() {
+  alwaysOnTop.value = await api.toggleAlwaysOnTop();
+  configStore.config.window.always_on_top = alwaysOnTop.value;
+  await save();
+}
+async function onAutostart() {
+  autostart.value = await api.setAutostart(autostart.value);
+  configStore.config.startup.auto_start = autostart.value;
+  await save();
+}
+
+async function pickTheme(t: Theme) {
+  if (t === 'dark') {
+    configStore.config.window.bg_mode = 'dark';
+    configStore.config.window.bg_value = '#2b2d3a';
+  } else if (t === 'light') {
+    configStore.config.window.bg_mode = 'light';
+    configStore.config.window.bg_value = '#f5f5f0';
+  }
+  await save();
+}
+
+async function pickImage() {
+  const selected = await open({
+    multiple: false,
+    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],
+  });
+  if (typeof selected === 'string') {
+    configStore.config.window.bg_mode = 'image';
+    configStore.config.window.bg_value = selected;
+    await save();
+  }
+}
+</script>
+
+<template>
+  <div class="overlay" @click.self="emit('close')">
+    <div class="modal">
+      <div class="modal-head">
+        <h3><Icon name="settings" :size="18" /> 设置</h3>
+        <button class="close-btn" @click="emit('close')" title="关闭"><Icon name="x" :size="18" /></button>
+      </div>
+
+      <section class="group">
+        <h4><Icon name="image" :size="14" /> 背景主题</h4>
+        <div class="theme-row">
+          <button :class="{ sel: theme === 'dark' }" @click="pickTheme('dark')">
+            <Icon name="calendar" :size="14" /> 深色
+          </button>
+          <button :class="{ sel: theme === 'light' }" @click="pickTheme('light')">
+            <Icon name="calendar" :size="14" /> 浅色
+          </button>
+          <button :class="{ sel: theme === 'image' }" @click="pickImage">
+            <Icon name="image" :size="14" /> 图片
+          </button>
+        </div>
+      </section>
+
+      <section class="group">
+        <h4><Icon name="type" :size="14" /> 字体</h4>
+        <label class="line">
+          <span>字号 {{ configStore.config.window.font_size }}px</span>
+          <input
+            type="range" min="12" max="22" step="1"
+            v-model.number="configStore.config.window.font_size"
+            @change="onFont"
+          />
+        </label>
+        <label class="line">
+          <span>字体</span>
+          <select v-model="configStore.config.window.font_family" @change="onFont">
+            <option v-for="f in fontFamilies" :key="f.value" :value="f.value">{{ f.label }}</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="group">
+        <h4><Icon name="image" :size="14" /> 背景透明度</h4>
+        <label class="line">
+          <span>{{ Math.round(configStore.config.window.opacity * 100) }}%</span>
+          <input
+            type="range" min="0.1" max="1" step="0.05"
+            v-model.number="configStore.config.window.opacity"
+            @change="onOpacity"
+          />
+        </label>
+        <p class="tip">仅影响背景，文字保持清晰</p>
+      </section>
+
+      <section class="group">
+        <h4><Icon name="pin" :size="14" /> 窗口</h4>
+        <label class="line">
+          <span><Icon name="pin" :size="13" /> 始终置顶</span>
+          <input type="checkbox" :checked="alwaysOnTop" @change="onTop" />
+        </label>
+        <label class="line">
+          <span><Icon name="settings" :size="13" /> 开机自启</span>
+          <input type="checkbox" :checked="autostart" @change="onAutostart" />
+        </label>
+      </section>
+
+      <div class="actions">
+        <button class="btn primary" @click="emit('close')">完成</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100; padding: 12px;
+}
+.modal {
+  background: color-mix(in srgb, var(--modal-bg, #2a2c3a) 92%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 14px;
+  width: 100%; max-width: 360px;
+  max-height: 80vh; overflow-y: auto;
+  color: inherit;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+  position: sticky; top: 0; background: inherit; z-index: 2;
+}
+h3 {
+  margin: 0; font-size: 15px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 0.4em;
+}
+.close-btn {
+  background: transparent; border: none; color: inherit;
+  opacity: 0.5; cursor: pointer; padding: 4px; border-radius: 6px;
+  display: flex;
+}
+.close-btn:hover { opacity: 1; background: rgba(128, 128, 128, 0.2); }
+.group { margin: 12px 16px 16px; }
+h4 {
+  margin: 0 0 10px; font-size: 12px; opacity: 0.7; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 0.35em;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.theme-row { display: flex; gap: 6px; }
+.theme-row button {
+  flex: 1;
+  background: rgba(128, 128, 128, 0.12);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  color: inherit; opacity: 0.8;
+  padding: 8px 4px; border-radius: 6px;
+  font-size: 12px; cursor: pointer; font-family: inherit;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+}
+.theme-row button:hover { background: rgba(128, 128, 128, 0.22); opacity: 1; }
+.theme-row button.sel {
+  background: #6c8cff; border-color: #6c8cff; color: #fff; opacity: 1;
+}
+.line {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; margin-bottom: 10px; gap: 12px;
+}
+.line span {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 0.35em;
+}
+.tip { font-size: 11px; opacity: 0.5; margin: 4px 0 0; }
+input[type='range'] { flex: 1; min-width: 0; }
+input[type='checkbox'] { width: 16px; height: 16px; accent-color: #6c8cff; }
+select {
+  background: rgba(128,128,128,0.15); color: inherit;
+  border: 1px solid rgba(128,128,128,0.25); border-radius: 6px;
+  padding: 6px 8px; font-size: 13px; font-family: inherit;
+}
+.actions {
+  display: flex; justify-content: flex-end;
+  margin: 6px 16px 16px; padding-top: 10px;
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+}
+.btn {
+  padding: 8px 18px; border-radius: 6px; border: none;
+  cursor: pointer; font-size: 13px; font-family: inherit;
+}
+.btn.primary { background: #6c8cff; color: #fff; }
+</style>

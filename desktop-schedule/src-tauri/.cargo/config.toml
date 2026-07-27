@@ -1,0 +1,5 @@
+# 静态链接 C 运行时，使 exe 不再依赖 vcruntime140.dll
+# 配合 --no-bundle 可产出"解压即用"的便携 exe（仅面向已预装 WebView2 的 Win10/11）
+# 详见设计方案.md 第 3 节 / 调研报告.md 第二部分
+[build]
+rustflags = ["-C", "target-feature=+crt-static"]

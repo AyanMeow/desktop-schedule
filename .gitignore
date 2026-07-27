@@ -1,0 +1,33 @@
+# ===== Rust / Tauri 构建产物 =====
+desktop-schedule/src-tauri/target/
+desktop-schedule/src-tauri/gen/
+
+# ===== 前端依赖与构建 =====
+desktop-schedule/node_modules/
+desktop-schedule/dist/
+desktop-schedule/dist-ssr/
+*.local
+
+# ===== 日志 =====
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ===== 编辑器 / 系统 =====
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+Thumbs.db
+
+# ===== 运行时数据（保险，正常不在项目目录）=====
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
