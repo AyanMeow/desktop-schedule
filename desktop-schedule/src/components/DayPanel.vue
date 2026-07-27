@@ -62,7 +62,7 @@ const dayLabel = computed(() => {
 }
 .panel-head span { font-size: 0.82em; font-weight: 600; }
 .add-btn {
-  background: #6c8cff; border: none; color: #fff;
+  background: var(--accent); border: none; color: #fff;
   width: 1.3em; height: 1.3em; border-radius: 5px;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
@@ -72,7 +72,7 @@ const dayLabel = computed(() => {
   padding: 1em 0; font-size: 0.8em; opacity: 0.5;
 }
 .add-link {
-  background: none; border: none; color: #6c8cff; cursor: pointer;
+  background: none; border: none; color: var(--accent); cursor: pointer;
   font-size: 1em; font-family: inherit;
   display: inline-flex; align-items: center; gap: 0.3em;
 }

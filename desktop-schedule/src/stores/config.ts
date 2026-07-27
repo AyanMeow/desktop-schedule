@@ -9,6 +9,7 @@ const defaultConfig: AppConfig = {
     locked: false, opacity: 0.9, always_on_top: false,
     bg_mode: 'dark', bg_value: '#2b2d3a',
     font_size: 15, font_family: "system-ui, 'Microsoft YaHei', sans-serif",
+    theme_name: 'slate',
   },
   view: { range: 'week', week_start: 'monday' },
   startup: { auto_start: false, delay_seconds: 5, expand_today_on_launch: true },

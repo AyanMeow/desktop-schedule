@@ -75,8 +75,8 @@ export interface DdlStatus {
   level: 'overdue' | 'le1' | 'le3' | 'le7' | 'gt7' | 'none';
 }
 
-/** 根据 ddl 计算剩余天数与对应颜色级别 */
-export function ddlStatus(ddlAt: string | null, colors: { overdue: string; le1: string; le3: string; le7: string; gt7: string }): DdlStatus {
+/** 根据 ddl 计算剩余天数与对应颜色级别（颜色由 CSS 变量驱动，此处仅算 level/label） */
+export function ddlStatus(ddlAt: string | null, colors?: { overdue: string; le1: string; le3: string; le7: string; gt7: string }): DdlStatus {
   if (!ddlAt) return { color: '', label: '', level: 'none' };
   // ddl 可能是 'YYYY-MM-DD' 或 'YYYY-MM-DD HH:MM'
   const ddlDate = parseISO(ddlAt.slice(0, 10));
@@ -105,13 +105,15 @@ export function ddlStatus(ddlAt: string | null, colors: { overdue: string; le1: 
     level = 'gt7';
     label = `还剩 ${diffDays} 天`;
   }
-  const colorMap = {
-    overdue: colors.overdue,
-    le1: colors.le1,
-    le3: colors.le3,
-    le7: colors.le7,
-    gt7: colors.gt7,
-    none: '',
-  } as const;
+  const colorMap = colors
+    ? {
+        overdue: colors.overdue,
+        le1: colors.le1,
+        le3: colors.le3,
+        le7: colors.le7,
+        gt7: colors.gt7,
+        none: '',
+      }
+    : { overdue: '', le1: '', le3: '', le7: '', gt7: '', none: '' };
   return { color: colorMap[level], label, level };
 }

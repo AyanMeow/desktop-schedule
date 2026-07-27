@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow, getAllWindows } from '@tauri-apps/api/window';
 import { useScheduleStore } from './stores/schedules';
 import { useConfigStore } from './stores/config';
+import { useWeatherStore } from './stores/weather';
 import CalendarGrid from './components/CalendarGrid.vue';
 import DayPanel from './components/DayPanel.vue';
 import AddScheduleModal from './components/AddScheduleModal.vue';
@@ -11,10 +12,12 @@ import SettingsPanel from './components/SettingsPanel.vue';
 import EncouragementToast from './components/EncouragementToast.vue';
 import WeatherBadge from './components/WeatherBadge.vue';
 import Icon from './components/Icon.vue';
+import { getPalette, getDdlScale } from './themes';
 import { toISO } from './utils/date';
 
 const scheduleStore = useScheduleStore();
 const configStore = useConfigStore();
+const weatherStore = useWeatherStore();
 
 // 是否为控制面板窗口（taskbar 窗口 url 带 #panel）
 const isPanel = computed(() => window.location.hash === '#panel');
@@ -35,20 +38,46 @@ const isLight = computed(() => theme.value === 'light');
 // 根容器样式：字体由 CSS 变量驱动，子组件用 em 继承
 const rootStyle = computed(() => {
   const light = isLight.value;
-  // veil：文字背后的磨砂底板。深色主题=深底，浅色=浅底，图片=半透深底
-  const veilColor = light ? 'rgba(245,245,240,0.55)' : 'rgba(20,22,32,0.55)';
+  const p = getPalette(configStore.config.window.theme_name);
+  const fg = light ? p.lightFg : p.darkFg;
+  const accent = light ? p.lightAccent : p.darkAccent;
+  const warning = light ? p.lightWarning : p.darkWarning;
+  const danger = light ? p.lightDanger : p.darkDanger;
+  const ddl = getDdlScale(p, light);
+  // veil：文字背后的磨砂底板
+  const veilBg = light
+    ? hexToRgba(p.lightBg, 0.55)
+    : hexToRgba(p.darkBg, 0.55);
   return {
     '--app-font-size': `${configStore.config.window.font_size}px`,
     '--app-font-family': configStore.config.window.font_family,
-    '--app-fg': light ? '#1a1a2e' : '#f0f0f5',
-    '--app-fg-soft': light ? 'rgba(26,26,46,0.65)' : 'rgba(240,240,245,0.65)',
-    '--modal-bg': light ? '#f5f5f0' : '#2a2c3a',
-    '--veil-bg': veilColor,
+    '--app-fg': fg,
+    '--app-fg-soft': fg + 'a6', // 约 65% 不透明
+    '--modal-bg': light ? p.lightBg : p.darkBg,
+    '--veil-bg': veilBg,
+    '--accent': accent,
+    '--accent-soft': accent + '2e', // 约 18%
+    '--warning': warning,
+    '--danger': danger,
+    '--ddl-overdue': ddl.overdue,
+    '--ddl-le1': ddl.le1,
+    '--ddl-le3': ddl.le3,
+    '--ddl-le7': ddl.le7,
+    '--ddl-gt7': ddl.gt7,
     fontFamily: configStore.config.window.font_family,
     fontSize: `${configStore.config.window.font_size}px`,
-    color: light ? '#1a1a2e' : '#f0f0f5',
+    color: fg,
   };
 });
+
+// hex 转 rgba（veil 半透明用）
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 // 背景层样式：透明度只作用于背景，前景文字不受影响
 const bgLayerStyle = computed(() => {
@@ -59,8 +88,11 @@ const bgLayerStyle = computed(() => {
       opacity: w.opacity,
     };
   }
+  // dark/light 模式：背景色由 palette 决定（切主题时即时生效）
+  const p = getPalette(w.theme_name);
+  const bg = isLight.value ? p.lightBg : p.darkBg;
   return {
-    background: w.bg_value,
+    background: bg,
     opacity: w.opacity,
   };
 });
@@ -142,6 +174,7 @@ onMounted(async () => {
   if (configStore.config.startup.expand_today_on_launch) {
     expandedDate.value = toISO(new Date());
   }
+  await weatherStore.init();
 });
 </script>
 

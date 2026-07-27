@@ -66,6 +66,7 @@ export interface WindowConfig {
   bg_value: string;
   font_size: number; // px
   font_family: string;
+  theme_name: string; // 配色预设名
 }
 
 export interface ViewConfig {
@@ -99,6 +100,15 @@ export interface WeatherConfig {
   longitude: number;
 }
 
+export interface DailyWeather {
+  date: string;
+  weather_code: number;
+  temp_max: number;
+  temp_min: number;
+  icon: string;
+  description: string;
+}
+
 export interface Weather {
   temperature: number;
   weather_code: number;
@@ -106,6 +116,7 @@ export interface Weather {
   icon: string;
   city: string;
   updated_at: string;
+  daily?: DailyWeather[];
 }
 
 export type ViewRange = 'week' | 'biweek' | 'month';

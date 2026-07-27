@@ -1,20 +1,27 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useScheduleStore } from '../stores/schedules';
-import { useConfigStore } from '../stores/config';
 import { eachDay, toISO, isToday, WEEKDAY_CN, ddlStatus } from '../utils/date';
 import Icon from './Icon.vue';
-import WeatherBadge from './WeatherBadge.vue';
+import { useWeatherStore } from '../stores/weather';
 import type { Schedule } from '../types';
 
 const scheduleStore = useScheduleStore();
-const configStore = useConfigStore();
+const weatherStore = useWeatherStore();
 
 // 当前展开的日期（null=未展开）；外部 v-model
 const props = defineProps<{ expandedDate: string | null }>();
 const emit = defineEmits<{ 'update:expandedDate': [string | null] }>();
 
-const colors = computed(() => configStore.config.ddl_colors);
+// ddl 圆点颜色：从 CSS 变量取（由主题驱动）
+const ddlColorVar: Record<string, string> = {
+  overdue: 'var(--ddl-overdue)',
+  le1: 'var(--ddl-le1)',
+  le3: 'var(--ddl-le3)',
+  le7: 'var(--ddl-le7)',
+  gt7: 'var(--ddl-gt7)',
+  none: 'var(--accent)',
+};
 
 // 网格的所有日期
 const days = computed(() => {
@@ -49,8 +56,8 @@ function schedulesOn(dateISO: string): Schedule[] {
 }
 
 function ddlDotColor(s: Schedule): string {
-  const st = ddlStatus(s.ddl_at, colors.value);
-  return st.color;
+  const st = ddlStatus(s.ddl_at);
+  return ddlColorVar[st.level] || 'var(--accent)';
 }
 
 function pendingCount(dateISO: string): number {
@@ -91,7 +98,6 @@ const gridDays = computed(() => {
       </button>
       <div class="nav-center">
         <span class="title">{{ rangeTitle }}</span>
-        <WeatherBadge />
       </div>
       <button class="nav-btn" @click="scheduleStore.navigate(1)" title="下一个">
         <Icon name="chevron-right" :size="16" />
@@ -132,6 +138,10 @@ const gridDays = computed(() => {
       >
         <template v-if="d">
           <div class="date-num">{{ d.getDate() }}</div>
+          <div class="cell-weather" v-if="weatherStore.dailyByDate(toISO(d))" :title="weatherStore.dailyByDate(toISO(d))?.description">
+            <Icon :name="weatherStore.dailyByDate(toISO(d))!.icon" :size="11" />
+            <span class="cw-temp">{{ Math.round(weatherStore.dailyByDate(toISO(d))!.temp_max) }}°</span>
+          </div>
           <div class="dots" v-if="schedulesOn(toISO(d)).length">
             <span
               v-for="s in schedulesOn(toISO(d)).slice(0, 4)"
@@ -168,8 +178,9 @@ const gridDays = computed(() => {
   gap: 0.5em;
 }
 .title {
-  font-size: 0.88em;
-  font-weight: 600;
+  font-size: 1.15em;
+  font-weight: 800;
+  letter-spacing: 0.5px;
 }
 .nav-btn {
   background: rgba(128, 128, 128, 0.15);
@@ -201,7 +212,7 @@ const gridDays = computed(() => {
   font-family: inherit;
 }
 .range-switch button.active {
-  background: #6c8cff;
+  background: var(--accent);
   color: #fff;
   opacity: 1;
 }
@@ -244,17 +255,26 @@ const gridDays = computed(() => {
 .cell.empty { background: transparent; cursor: default; }
 .cell.empty:hover { background: transparent; }
 .cell.today {
-  background: rgba(108, 140, 255, 0.25);
-  outline: 1px solid rgba(108, 140, 255, 0.6);
+  background: var(--accent-soft);
+  outline: 1px solid var(--accent);
 }
 .cell.expanded {
-  background: rgba(108, 140, 255, 0.35);
-  outline: 1px solid #6c8cff;
+  background: var(--accent-soft);
+  outline: 1.5px solid var(--accent);
 }
 .date-num {
   font-size: 0.8em;
   font-weight: 500;
 }
+.cell-weather {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1em;
+  font-size: 0.6em;
+  opacity: 0.8;
+  color: var(--accent);
+}
+.cw-temp { font-weight: 600; }
 .cell.today .date-num { font-weight: 700; }
 .dots {
   display: flex;
@@ -266,12 +286,12 @@ const gridDays = computed(() => {
   width: 0.35em;
   height: 0.35em;
   border-radius: 50%;
-  background: #6c8cff;
+  background: var(--accent);
 }
 .dot.done { background: rgba(128, 128, 128, 0.4); }
 .count {
   font-size: 0.6em;
-  color: #f1c40f;
+  color: var(--warning);
   font-weight: 600;
 }
 </style>

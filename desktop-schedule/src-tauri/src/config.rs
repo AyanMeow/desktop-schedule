@@ -43,6 +43,8 @@ pub struct WindowConfig {
     pub font_size: u32, // px
     #[serde(default = "default_font_family")]
     pub font_family: String,
+    #[serde(default = "default_theme_name")]
+    pub theme_name: String, // 配色预设名（slate/forest/ocean/...）
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,6 +126,7 @@ impl Default for WindowConfig {
             bg_value: default_bg_value(),
             font_size: default_font_size(),
             font_family: default_font_family(),
+            theme_name: default_theme_name(),
         }
     }
 }
@@ -189,6 +192,7 @@ fn default_bg_mode() -> String { "dark".into() }
 fn default_bg_value() -> String { "#2b2d3a".into() }
 fn default_font_size() -> u32 { 15 }
 fn default_font_family() -> String { "system-ui".into() }
+fn default_theme_name() -> String { "slate".into() }
 fn default_range() -> String { "week".into() }
 fn default_week_start() -> String { "monday".into() }
 fn default_delay() -> u64 { 5 }

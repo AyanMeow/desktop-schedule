@@ -12,29 +12,64 @@ pub struct Weather {
     pub icon: String,          // 图标名（映射到 Icon.vue）
     pub city: String,
     pub updated_at: String,    // 更新时间
+    #[serde(default)]
+    pub daily: Vec<DailyWeather>, // 未来 7 天预报
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyWeather {
+    pub date: String,        // 'YYYY-MM-DD'
+    pub weather_code: i32,
+    pub temp_max: f64,
+    pub temp_min: f64,
+    pub icon: String,
+    pub description: String,
 }
 
 /// Open-Meteo API 返回结构（只取需要的字段）
 #[derive(Debug, Deserialize)]
 struct OwmResp {
     current: OwmCurrent,
+    daily: OwmDaily,
 }
 #[derive(Debug, Deserialize)]
 struct OwmCurrent {
     temperature_2m: f64,
     weather_code: i32,
 }
+#[derive(Debug, Deserialize)]
+struct OwmDaily {
+    time: Vec<String>,
+    weather_code: Vec<i32>,
+    temperature_2m_max: Vec<f64>,
+    temperature_2m_min: Vec<f64>,
+}
 
-/// 调用 Open-Meteo 拉取一次天气
+/// 调用 Open-Meteo 拉取一次天气（含 7 天预报）
 pub async fn fetch(lat: f64, lon: f64, city: &str) -> anyhow::Result<Weather> {
     let url = format!(
-        "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code"
+        "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=7"
     );
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(8))
         .build()?;
     let resp: OwmResp = client.get(&url).send().await?.json().await?;
     let (desc, icon) = wmo_to_desc(resp.current.weather_code);
+
+    // 组装每日预报
+    let mut daily = Vec::new();
+    for i in 0..resp.daily.time.len().min(7) {
+        let (d, ic) = wmo_to_desc(resp.daily.weather_code[i]);
+        daily.push(DailyWeather {
+            date: resp.daily.time[i].clone(),
+            weather_code: resp.daily.weather_code[i],
+            temp_max: resp.daily.temperature_2m_max[i],
+            temp_min: resp.daily.temperature_2m_min[i],
+            icon: ic.into(),
+            description: d.into(),
+        });
+    }
+
     Ok(Weather {
         temperature: resp.current.temperature_2m,
         weather_code: resp.current.weather_code,
@@ -42,6 +77,7 @@ pub async fn fetch(lat: f64, lon: f64, city: &str) -> anyhow::Result<Weather> {
         icon: icon.into(),
         city: city.into(),
         updated_at: chrono::Local::now().format("%H:%M").to_string(),
+        daily,
     })
 }
 

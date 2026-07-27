@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useConfigStore } from '../stores/config';
 import { api } from '../api';
 import Icon from './Icon.vue';
+import { PALETTES } from '../themes';
 
 const configStore = useConfigStore();
 const emit = defineEmits<{ close: [] }>();
@@ -55,6 +56,11 @@ function onCityChange(e: Event) {
 
 async function onWeatherToggle() {
   configStore.config.weather.enabled = !configStore.config.weather.enabled;
+  await configStore.save();
+}
+
+async function pickPalette(name: string) {
+  configStore.config.window.theme_name = name;
   await configStore.save();
 }
 
@@ -121,6 +127,24 @@ async function pickImage() {
           </button>
           <button :class="{ sel: theme === 'image' }" @click="pickImage">
             <Icon name="image" :size="14" /> 图片
+          </button>
+        </div>
+      </section>
+
+      <section class="group">
+        <h4><Icon name="star" :size="14" /> 配色</h4>
+        <div class="palette-grid">
+          <button
+            v-for="p in PALETTES"
+            :key="p.name"
+            class="palette-chip"
+            :class="{ sel: configStore.config.window.theme_name === p.name }"
+            @click="pickPalette(p.name)"
+          >
+            <span class="chip-dot" :style="{ background: p.darkBg }">
+              <span class="chip-accent" :style="{ background: p.darkAccent }"></span>
+            </span>
+            <span class="chip-label">{{ p.label }}</span>
           </button>
         </div>
       </section>
@@ -242,7 +266,7 @@ h4 {
 }
 .theme-row button:hover { background: rgba(128, 128, 128, 0.22); opacity: 1; }
 .theme-row button.sel {
-  background: #6c8cff; border-color: #6c8cff; color: #fff; opacity: 1;
+  background: var(--accent); border-color: var(--accent); color: #fff; opacity: 1;
 }
 .line {
   display: flex; align-items: center; justify-content: space-between;
@@ -254,12 +278,14 @@ h4 {
 }
 .tip { font-size: 11px; opacity: 0.5; margin: 4px 0 0; }
 input[type='range'] { flex: 1; min-width: 0; }
-input[type='checkbox'] { width: 16px; height: 16px; accent-color: #6c8cff; }
+input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--accent); }
 select {
   background: rgba(128,128,128,0.15); color: inherit;
   border: 1px solid rgba(128,128,128,0.25); border-radius: 6px;
   padding: 6px 8px; font-size: 13px; font-family: inherit;
 }
+/* select 下拉选项用系统默认深底浅字，避免在浅色面板里灰看不清 */
+select option { background: #2a2c3a; color: #f0f0f5; }
 .actions {
   display: flex; justify-content: flex-end;
   margin: 6px 16px 16px; padding-top: 10px;
@@ -269,5 +295,41 @@ select {
   padding: 8px 18px; border-radius: 6px; border: none;
   cursor: pointer; font-size: 13px; font-family: inherit;
 }
-.btn.primary { background: #6c8cff; color: #fff; }
+.btn.primary { background: var(--accent); color: #fff; }
+
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.palette-chip {
+  background: rgba(128,128,128,0.1);
+  border: 1px solid rgba(128,128,128,0.2);
+  border-radius: 7px;
+  padding: 6px 4px 5px;
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+}
+.palette-chip:hover { background: rgba(128,128,128,0.2); }
+.palette-chip.sel { border-color: var(--accent); background: var(--accent-soft); }
+.chip-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.chip-accent {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.chip-label { font-size: 11px; opacity: 0.9; }
 </style>

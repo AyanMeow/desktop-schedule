@@ -267,11 +267,11 @@ h3 {
 }
 .hint {
   font-size: 11px;
-  color: #f1c40f;
+  color: var(--warning);
 }
 .ddl-date {
   font-size: 12px;
-  color: #6c8cff;
+  color: var(--accent);
   font-weight: 600;
 }
 input[type='text'],
@@ -293,10 +293,10 @@ textarea { resize: vertical; }
 input[type='checkbox'] {
   width: 15px;
   height: 15px;
-  accent-color: #6c8cff;
+  accent-color: var(--accent);
 }
 .error {
-  color: #e74c3c;
+  color: var(--danger);
   font-size: 12px;
   margin: 4px 16px;
 }
@@ -317,7 +317,7 @@ input[type='checkbox'] {
   font-family: inherit;
 }
 .btn.primary {
-  background: #6c8cff;
+  background: var(--accent);
   color: #fff;
   display: inline-flex;
   align-items: center;
@@ -332,32 +332,32 @@ input[type='checkbox'] {
 .btn:disabled { opacity: 0.5; }
 .attach-row {
   display: flex; align-items: center; gap: 0.5em;
-  background: rgba(108,140,255,0.12);
-  border: 1px solid rgba(108,140,255,0.35);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
   border-radius: 6px;
   padding: 0.4em 0.6em;
 }
 .attach-name {
   display: inline-flex; align-items: center; gap: 0.3em;
-  font-size: 0.8em; color: #6c8cff;
+  font-size: 0.8em; color: var(--accent);
   flex: 1; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .mini-btn {
-  background: transparent; border: none; color: #ccc;
+  background: transparent; border: none; color: currentColor;
   cursor: pointer; padding: 2px; display: flex;
-  border-radius: 4px;
+  border-radius: 4px; opacity: 0.7;
 }
-.mini-btn:hover { background: rgba(255,255,255,0.1); color: #e74c3c; }
+.mini-btn:hover { background: var(--accent-soft); color: var(--danger); opacity: 1; }
 .attach-pick { display: flex; gap: 0.5em; }
 .pick-btn {
   flex: 1;
-  background: rgba(255,255,255,0.06);
-  border: 1px dashed rgba(255,255,255,0.2);
-  color: #ccc;
+  background: var(--accent-soft);
+  border: 1px dashed var(--accent);
+  color: var(--accent);
   padding: 0.5em; border-radius: 6px;
   font-size: 0.8em; cursor: pointer; font-family: inherit;
   display: flex; align-items: center; justify-content: center; gap: 0.3em;
 }
-.pick-btn:hover { background: rgba(255,255,255,0.12); }
+.pick-btn:hover { background: var(--accent); color: #fff; }
 </style>

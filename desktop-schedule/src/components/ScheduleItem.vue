@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useScheduleStore } from '../stores/schedules';
-import { useConfigStore } from '../stores/config';
 import { api } from '../api';
 import { ddlStatus } from '../utils/date';
 import Icon from './Icon.vue';
@@ -11,17 +10,16 @@ const props = defineProps<{ schedule: Schedule }>();
 const emit = defineEmits<{ deleted: [] }>();
 
 const scheduleStore = useScheduleStore();
-const configStore = useConfigStore();
 
 const showNote = ref(false);
 const confirming = ref(false); // 删除多天确认态
 
-const ddl = computed(() => ddlStatus(props.schedule.ddl_at, configStore.config.ddl_colors));
+const ddl = computed(() => ddlStatus(props.schedule.ddl_at));
 
 const priorityColor = computed(() => {
   switch (props.schedule.priority) {
-    case 2: return '#e74c3c';
-    case 1: return '#f39c12';
+    case 2: return 'var(--danger)';
+    case 1: return 'var(--warning)';
     default: return 'transparent';
   }
 });
@@ -86,7 +84,7 @@ async function doDeleteAll() {
         </span>
       </div>
       <div class="meta">
-        <span v-if="schedule.has_ddl && !schedule.completed" class="ddl" :style="{ color: ddl.color }">
+        <span v-if="schedule.has_ddl && !schedule.completed" class="ddl" :class="'ddl-lv-' + ddl.level">
           <Icon name="flag" :size="11" /> {{ ddl.label }}
         </span>
         <span v-if="schedule.priority >= 1" class="pri-icon" :style="{ color: priorityColor }">
@@ -143,7 +141,7 @@ async function doDeleteAll() {
   display: flex; align-items: center; justify-content: center;
   margin-top: 0.1em;
 }
-.item.done .check { background: #6c8cff; border-color: #6c8cff; color: #fff; }
+.item.done .check { background: var(--accent); border-color: var(--accent); color: #fff; }
 .body { flex: 1; min-width: 0; cursor: pointer; }
 .head { display: flex; align-items: baseline; gap: 0.5em; flex-wrap: wrap; }
 .title { font-size: 0.9em; word-break: break-word; }
@@ -156,17 +154,22 @@ async function doDeleteAll() {
   display: inline-flex; align-items: center; gap: 0.2em;
   font-size: 0.72em; font-weight: 600;
 }
+.ddl-lv-overdue { color: var(--ddl-overdue); }
+.ddl-lv-le1 { color: var(--ddl-le1); }
+.ddl-lv-le3 { color: var(--ddl-le3); }
+.ddl-lv-le7 { color: var(--ddl-le7); }
+.ddl-lv-gt7 { color: var(--ddl-gt7); opacity: 0.8; }
 .pri-icon { display: inline-flex; }
 .attach-btn {
   display: inline-flex; align-items: center; gap: 0.2em;
-  background: rgba(108, 140, 255, 0.18);
-  border: 1px solid rgba(108, 140, 255, 0.4);
-  color: #6c8cff;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--accent);
   padding: 0.1em 0.4em; border-radius: 4px;
   font-size: 0.68em; cursor: pointer; font-family: inherit;
   max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.attach-btn:hover { background: rgba(108, 140, 255, 0.3); }
+.attach-btn:hover { background: var(--accent); color: #fff; }
 .note {
   font-size: 0.78em; opacity: 0.7;
   margin-top: 0.3em; padding: 0.35em 0.45em;
@@ -187,8 +190,8 @@ async function doDeleteAll() {
   padding: 0.25em 0.6em; cursor: pointer;
   font-size: 1em; font-family: inherit;
 }
-.cbtn.all { background: #e74c3c; color: #fff; }
-.cbtn.one { background: #f39c12; color: #fff; }
+.cbtn.all { background: var(--danger); color: #fff; }
+.cbtn.one { background: var(--warning); color: #fff; }
 .cbtn.cancel { background: rgba(128,128,128,0.25); color: inherit; }
 .del {
   flex-shrink: 0; background: transparent; border: none;
@@ -196,5 +199,5 @@ async function doDeleteAll() {
   width: 1.3em; height: 1.3em; border-radius: 5px;
   display: flex; align-items: center; justify-content: center;
 }
-.del:hover { opacity: 1; color: #e74c3c; background: rgba(231,76,60,0.12); }
+.del:hover { opacity: 1; color: var(--danger); background: var(--accent-soft); }
 </style>
