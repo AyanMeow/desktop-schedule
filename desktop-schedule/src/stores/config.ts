@@ -5,7 +5,7 @@ import type { AppConfig } from '../types';
 
 const defaultConfig: AppConfig = {
   window: {
-    x: 100, y: 100, width: 600, height: 450,
+    x: 100, y: 100, width: 900, height: 675,
     locked: false, opacity: 0.9, always_on_top: false,
     bg_mode: 'dark', bg_value: '#2b2d3a',
     font_size: 15, font_family: "system-ui, 'Microsoft YaHei', sans-serif",

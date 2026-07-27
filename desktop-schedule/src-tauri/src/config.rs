@@ -185,8 +185,8 @@ impl Default for WeatherConfig {
 // 默认值函数
 fn default_x() -> i32 { 100 }
 fn default_y() -> i32 { 100 }
-fn default_w() -> u32 { 600 }
-fn default_h() -> u32 { 450 }
+fn default_w() -> u32 { 900 }
+fn default_h() -> u32 { 675 }
 fn default_opacity() -> f64 { 0.9 }
 fn default_bg_mode() -> String { "dark".into() }
 fn default_bg_value() -> String { "#2b2d3a".into() }

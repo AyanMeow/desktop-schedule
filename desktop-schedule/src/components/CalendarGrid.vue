@@ -137,21 +137,26 @@ const gridDays = computed(() => {
         @click="d && onCellClick(toISO(d))"
       >
         <template v-if="d">
-          <div class="date-num">{{ d.getDate() }}</div>
-          <div class="cell-weather" v-if="weatherStore.dailyByDate(toISO(d))" :title="weatherStore.dailyByDate(toISO(d))?.description">
-            <Icon :name="weatherStore.dailyByDate(toISO(d))!.icon" :size="11" />
-            <span class="cw-temp">{{ Math.round(weatherStore.dailyByDate(toISO(d))!.temp_max) }}°</span>
+          <div class="cell-head">
+            <div class="date-num">{{ d.getDate() }}</div>
+            <div class="cell-weather" v-if="weatherStore.dailyByDate(toISO(d))" :title="weatherStore.dailyByDate(toISO(d))?.description">
+              <Icon :name="weatherStore.dailyByDate(toISO(d))!.icon" :size="10" />
+              <span class="cw-temp">{{ Math.round(weatherStore.dailyByDate(toISO(d))!.temp_max) }}°</span>
+            </div>
           </div>
-          <div class="dots" v-if="schedulesOn(toISO(d)).length">
-            <span
-              v-for="s in schedulesOn(toISO(d)).slice(0, 4)"
+          <div class="cell-events">
+            <div
+              v-for="s in schedulesOn(toISO(d)).slice(0, 3)"
               :key="s.id"
-              class="dot"
+              class="event"
               :class="{ done: s.completed }"
-              :style="!s.completed && s.has_ddl ? { background: ddlDotColor(s) } : {}"
-            ></span>
+              :style="!s.completed && s.has_ddl ? { borderLeftColor: ddlDotColor(s) } : {}"
+              :title="s.title + (s.time_of_day ? ' ' + s.time_of_day : '')"
+            >{{ s.title }}</div>
+            <div class="event-more" v-if="schedulesOn(toISO(d)).length > 3">
+              +{{ schedulesOn(toISO(d)).length - 3 }}
+            </div>
           </div>
-          <div class="count" v-if="pendingCount(toISO(d)) > 0">{{ pendingCount(toISO(d)) }}</div>
         </template>
       </div>
     </div>
@@ -234,25 +239,20 @@ const gridDays = computed(() => {
   gap: 0.2em;
 }
 .cell {
-  aspect-ratio: 1 / 0.8;
+  min-height: 4em;
   border-radius: 6px;
   background: rgba(128, 128, 128, 0.1);
-  padding: 0.2em 0.3em;
+  padding: 0.25em 0.35em;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 0.15em;
   transition: background 0.15s;
   position: relative;
-}
-/* 月视图：格更紧凑，能容纳更多行 */
-.grid.month .cell {
-  aspect-ratio: 1 / 0.7;
-  min-height: 2.2em;
+  overflow: hidden;
 }
 .cell:hover { background: rgba(128, 128, 128, 0.22); }
-.cell.empty { background: transparent; cursor: default; }
+.cell.empty { background: transparent; cursor: default; min-height: 0; }
 .cell.empty:hover { background: transparent; }
 .cell.today {
   background: var(--accent-soft);
@@ -262,36 +262,54 @@ const gridDays = computed(() => {
   background: var(--accent-soft);
   outline: 1.5px solid var(--accent);
 }
+/* cell 头部：日期数字（左）+ 天气（右） */
+.cell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.1em;
+}
 .date-num {
-  font-size: 0.8em;
-  font-weight: 500;
+  font-size: 0.78em;
+  font-weight: 600;
 }
 .cell-weather {
   display: inline-flex;
   align-items: center;
   gap: 0.1em;
-  font-size: 0.6em;
+  font-size: 0.58em;
   opacity: 0.8;
   color: var(--accent);
 }
 .cw-temp { font-weight: 600; }
-.cell.today .date-num { font-weight: 700; }
-.dots {
+.cell.today .date-num { font-weight: 800; }
+/* cell 内事件列表 */
+.cell-events {
   display: flex;
-  gap: 0.15em;
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-direction: column;
+  gap: 0.12em;
+  overflow: hidden;
 }
-.dot {
-  width: 0.35em;
-  height: 0.35em;
-  border-radius: 50%;
-  background: var(--accent);
+.event {
+  font-size: 0.62em;
+  line-height: 1.25;
+  padding: 0.1em 0.3em;
+  border-left: 2px solid transparent;
+  border-radius: 0 3px 3px 0;
+  background: rgba(128, 128, 128, 0.18);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.92;
 }
-.dot.done { background: rgba(128, 128, 128, 0.4); }
-.count {
-  font-size: 0.6em;
-  color: var(--warning);
-  font-weight: 600;
+.event.done {
+  text-decoration: line-through;
+  opacity: 0.45;
+  background: rgba(128, 128, 128, 0.1);
+}
+.event-more {
+  font-size: 0.58em;
+  opacity: 0.5;
+  padding: 0 0.3em;
 }
 </style>
