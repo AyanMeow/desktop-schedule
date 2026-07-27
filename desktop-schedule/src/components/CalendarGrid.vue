@@ -4,6 +4,7 @@ import { useScheduleStore } from '../stores/schedules';
 import { useConfigStore } from '../stores/config';
 import { eachDay, toISO, isToday, WEEKDAY_CN, ddlStatus } from '../utils/date';
 import Icon from './Icon.vue';
+import WeatherBadge from './WeatherBadge.vue';
 import type { Schedule } from '../types';
 
 const scheduleStore = useScheduleStore();
@@ -88,7 +89,10 @@ const gridDays = computed(() => {
       <button class="nav-btn" @click="scheduleStore.navigate(-1)" title="上一个">
         <Icon name="chevron-left" :size="16" />
       </button>
-      <span class="title">{{ rangeTitle }}</span>
+      <div class="nav-center">
+        <span class="title">{{ rangeTitle }}</span>
+        <WeatherBadge />
+      </div>
       <button class="nav-btn" @click="scheduleStore.navigate(1)" title="下一个">
         <Icon name="chevron-right" :size="16" />
       </button>
@@ -155,6 +159,13 @@ const gridDays = computed(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0 2px;
+}
+.nav-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
 }
 .title {
   font-size: 0.88em;

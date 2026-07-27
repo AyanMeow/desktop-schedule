@@ -75,7 +75,9 @@ async function onTitlebarDown(e: MouseEvent) {
 
 async function onResizeDown(e: MouseEvent) {
   e.stopPropagation();
+  e.preventDefault();
   if (locked.value || menuLocked.value) return;
+  // SouthEast = 同时向右(东)和向下(南)拉伸，支持斜向拖动
   await getCurrentWindow().startResizeDragging('SouthEast');
 }
 
@@ -360,11 +362,11 @@ html, body, #app {
   position: absolute;
   right: 0;
   bottom: 0;
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   cursor: nwse-resize;
-  z-index: 60;
-  background: linear-gradient(135deg, transparent 50%, rgba(128,128,128,0.4) 50%, rgba(128,128,128,0.4) 60%, transparent 60%, transparent 70%, rgba(128,128,128,0.4) 70%, rgba(128,128,128,0.4) 80%, transparent 80%);
+  z-index: 70;
+  background: linear-gradient(135deg, transparent 50%, rgba(128,128,128,0.45) 50%, rgba(128,128,128,0.45) 60%, transparent 60%, transparent 70%, rgba(128,128,128,0.45) 70%, rgba(128,128,128,0.45) 80%, transparent 80%);
 }
 
 /* ===== 控制面板（taskbar 窗口） ===== */
