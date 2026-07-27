@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow, getAllWindows } from '@tauri-apps/api/window';
 import { useScheduleStore } from './stores/schedules';
 import { useConfigStore } from './stores/config';
 import CalendarGrid from './components/CalendarGrid.vue';
@@ -15,6 +15,9 @@ import { toISO } from './utils/date';
 
 const scheduleStore = useScheduleStore();
 const configStore = useConfigStore();
+
+// 是否为控制面板窗口（taskbar 窗口 url 带 #panel）
+const isPanel = computed(() => window.location.hash === '#panel');
 
 const locked = ref(false);
 const expandedDate = ref<string | null>(null);
@@ -98,6 +101,21 @@ function onAdded(dateISO: string) {
   expandedDate.value = dateISO;
 }
 
+// ===== 控制面板（taskbar 窗口）方法 =====
+async function panelToggleWidget() {
+  const wins = await getAllWindows();
+  const main = wins.find((w) => w.label === 'main');
+  if (!main) return;
+  const vis = await main.isVisible();
+  if (vis) await main.hide();
+  else { await main.show(); await main.setFocus(); }
+}
+async function panelFocusWidget() {
+  const wins = await getAllWindows();
+  const main = wins.find((w) => w.label === 'main');
+  if (main) { await main.show(); await main.setFocus(); }
+}
+
 // 展开日期变化时，把面板滚入视野（解决月视图看不到面板）
 watch(expandedDate, async () => {
   await nextTick();
@@ -110,6 +128,8 @@ watch(expandedDate, async () => {
 });
 
 onMounted(async () => {
+  // 控制面板窗口不需要加载日程
+  if (isPanel.value) return;
   await configStore.load();
   await scheduleStore.refresh();
   locked.value = configStore.config.window.locked;
@@ -124,7 +144,24 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="widget" :style="rootStyle" :data-theme="theme">
+  <!-- 控制面板窗口（taskbar） -->
+  <div v-if="isPanel" class="panel">
+    <h2><Icon name="calendar" :size="20" /> 桌面日程</h2>
+    <p class="panel-tip">桌面贴片始终显示，不受此窗口影响</p>
+    <button class="panel-btn primary" @click="panelFocusWidget">
+      <Icon name="calendar" :size="16" /> 找到桌面贴片
+    </button>
+    <button class="panel-btn" @click="panelToggleWidget">
+      <Icon name="x" :size="16" /> 显示/隐藏贴片
+    </button>
+    <button class="panel-btn ghost" @click="showSettings = true">
+      <Icon name="settings" :size="16" /> 设置
+    </button>
+    <SettingsPanel v-if="showSettings" @close="showSettings = false" />
+  </div>
+
+  <!-- 主贴片窗口（main） -->
+  <div v-else class="widget" :style="rootStyle" :data-theme="theme">
     <!-- 背景层：透明度只作用于此层 -->
     <div class="bg-layer" :style="bgLayerStyle"></div>
 
@@ -329,4 +366,50 @@ html, body, #app {
   z-index: 60;
   background: linear-gradient(135deg, transparent 50%, rgba(128,128,128,0.4) 50%, rgba(128,128,128,0.4) 60%, transparent 60%, transparent 70%, rgba(128,128,128,0.4) 70%, rgba(128,128,128,0.4) 80%, transparent 80%);
 }
+
+/* ===== 控制面板（taskbar 窗口） ===== */
+.panel {
+  height: 100vh;
+  background: #f5f5f7;
+  color: #1a1a2e;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 16px;
+  gap: 12px;
+  font-family: 'Microsoft YaHei', system-ui, sans-serif;
+}
+.panel h2 {
+  margin: 0;
+  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+}
+.panel-tip {
+  margin: 0 0 8px;
+  font-size: 11px;
+  opacity: 0.55;
+  text-align: center;
+}
+.panel-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: #fff;
+  color: #1a1a2e;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  transition: background 0.15s;
+}
+.panel-btn:hover { background: #ececef; }
+.panel-btn.primary { background: #6c8cff; color: #fff; border-color: #6c8cff; }
+.panel-btn.primary:hover { background: #5a7aee; }
+.panel-btn.ghost { background: transparent; }
 </style>

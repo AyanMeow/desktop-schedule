@@ -164,9 +164,18 @@ pub fn run() {
         .manage(WindowState::default())
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                // 关闭按钮改为隐藏到托盘
-                let _ = window.hide();
-                api.prevent_close();
+                match window.label() {
+                    // 贴片窗口：永不关闭，拦截
+                    "main" => {
+                        api.prevent_close();
+                    }
+                    // 控制面板窗口：关闭=最小化到托盘（隐藏），但贴片保持显示
+                    "taskbar" => {
+                        let _ = window.hide();
+                        api.prevent_close();
+                    }
+                    _ => {}
+                }
             }
         })
         .setup(|app| {
@@ -189,11 +198,12 @@ pub fn run() {
             weather::start_refresh_loop(app.handle().clone());
 
             // 托盘菜单
-            let show = MenuItem::with_id(app, "show", "显示/隐藏", true, None::<&str>)?;
+            let panel = MenuItem::with_id(app, "panel", "控制面板", true, None::<&str>)?;
+            let toggle_widget = MenuItem::with_id(app, "toggle_widget", "显示/隐藏贴片", true, None::<&str>)?;
             let top = MenuItem::with_id(app, "top", "切换置顶", true, None::<&str>)?;
             let sep = tauri::menu::PredefinedMenuItem::separator(app)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &top, &sep, &quit])?;
+            let menu = Menu::with_items(app, &[&panel, &toggle_widget, &top, &sep, &quit])?;
 
             let _tray = TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().unwrap().clone())
@@ -201,7 +211,17 @@ pub fn run() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
+                    "panel" => {
+                        if let Some(win) = app.get_webview_window("taskbar") {
+                            if win.is_visible().unwrap_or(false) {
+                                let _ = win.set_focus();
+                            } else {
+                                let _ = win.show();
+                                let _ = win.set_focus();
+                            }
+                        }
+                    }
+                    "toggle_widget" => {
                         if let Some(win) = app.get_webview_window("main") {
                             if win.is_visible().unwrap_or(false) {
                                 let _ = win.hide();
@@ -223,6 +243,7 @@ pub fn run() {
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
+                    // 左键单击：切换控制面板窗口（贴片始终不受影响）
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
@@ -230,9 +251,9 @@ pub fn run() {
                     } = event
                     {
                         let app = tray.app_handle();
-                        if let Some(win) = app.get_webview_window("main") {
+                        if let Some(win) = app.get_webview_window("taskbar") {
                             if win.is_visible().unwrap_or(false) {
-                                let _ = win.hide();
+                                let _ = win.set_focus();
                             } else {
                                 let _ = win.show();
                                 let _ = win.set_focus();

@@ -22,9 +22,24 @@
         "transparent": true,
         "resizable": true,
         "alwaysOnTop": false,
-        "skipTaskbar": false,
+        "skipTaskbar": true,
         "shadow": false,
-        "visible": true
+        "visible": true,
+        "url": "index.html"
+      },
+      {
+        "label": "taskbar",
+        "title": "桌面日程 · 控制面板",
+        "width": 300,
+        "height": 200,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": true,
+        "decorations": true,
+        "transparent": false,
+        "skipTaskbar": false,
+        "visible": true,
+        "url": "index.html#panel"
       }
     ],
     "security": {
