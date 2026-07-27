@@ -51,6 +51,7 @@ export interface AppConfig {
   startup: StartupConfig;
   ddl_colors: DdlColors;
   encouragement: EncouragementConfig;
+  weather: WeatherConfig;
 }
 
 export interface WindowConfig {
@@ -89,6 +90,22 @@ export interface DdlColors {
 export interface EncouragementConfig {
   sound: boolean;
   undo_window_seconds: number;
+}
+
+export interface WeatherConfig {
+  enabled: boolean;
+  city: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface Weather {
+  temperature: number;
+  weather_code: number;
+  description: string;
+  icon: string;
+  city: string;
+  updated_at: string;
 }
 
 export type ViewRange = 'week' | 'biweek' | 'month';

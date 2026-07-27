@@ -9,6 +9,7 @@ import DayPanel from './components/DayPanel.vue';
 import AddScheduleModal from './components/AddScheduleModal.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
 import EncouragementToast from './components/EncouragementToast.vue';
+import WeatherBadge from './components/WeatherBadge.vue';
 import Icon from './components/Icon.vue';
 import { toISO } from './utils/date';
 
@@ -158,6 +159,7 @@ onMounted(async () => {
           </div>
         </div>
         <span class="brand"><Icon name="calendar" :size="16" /> 桌面日程</span>
+        <WeatherBadge />
         <div class="topbar-actions">
           <button class="icon-btn" @click="toggleLock" :title="menuLocked ? '解除锁定' : '锁定位置'">
             <Icon :name="menuLocked ? 'lock' : 'unlock'" :size="17" />
@@ -259,6 +261,8 @@ html, body, #app {
   gap: 0.3em;
   font-size: 1em;
   font-weight: 600;
+  flex: 1;
+  margin-left: 0.3em;
 }
 .menu-wrap { position: relative; }
 .topbar-actions { display: flex; align-items: center; gap: 0.2em; }

@@ -8,13 +8,15 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 mod config;
 mod db;
+mod weather;
 mod window_state;
 use window_state::{WindowState, WindowStateExt};
 
-/// 应用状态：数据库连接 + 配置文件路径
+/// 应用状态：数据库连接 + 配置文件路径 + 最近天气缓存
 pub struct AppState {
     pub db: db::Db,
     pub config_path: std::path::PathBuf,
+    pub last_weather: Option<weather::Weather>,
 }
 
 // ============ 日程命令 ============
@@ -84,6 +86,19 @@ fn count_group(state: State<'_, Mutex<AppState>>, group_id: String) -> Result<i6
 #[tauri::command]
 async fn open_attachment(path: String) -> Result<(), String> {
     tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// 手动拉取一次天气
+#[tauri::command]
+async fn fetch_weather(lat: f64, lon: f64, city: String) -> Result<weather::Weather, String> {
+    weather::fetch(lat, lon, &city).await.map_err(|e| e.to_string())
+}
+
+/// 取最近一次缓存的天气（启动时用，避免空状态）
+#[tauri::command]
+fn get_last_weather(state: State<'_, Mutex<AppState>>) -> Option<weather::Weather> {
+    let st = state.lock().ok()?;
+    st.last_weather.clone()
 }
 
 // ============ 配置命令 ============
@@ -167,7 +182,11 @@ pub fn run() {
             app.manage(Mutex::new(AppState {
                 db: database,
                 config_path,
+                last_weather: None,
             }));
+
+            // 启动天气定时刷新（每 30 分钟）
+            weather::start_refresh_loop(app.handle().clone());
 
             // 托盘菜单
             let show = MenuItem::with_id(app, "show", "显示/隐藏", true, None::<&str>)?;
@@ -235,6 +254,8 @@ pub fn run() {
             delete_group,
             count_group,
             open_attachment,
+            fetch_weather,
+            get_last_weather,
             list_encouragements,
             // 配置
             get_config,

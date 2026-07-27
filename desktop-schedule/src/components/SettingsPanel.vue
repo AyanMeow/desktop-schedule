@@ -26,6 +26,38 @@ const fontFamilies = [
   { label: '楷体', value: "'KaiTi', serif" },
 ];
 
+// 常用城市（Open-Meteo 经纬度，免费无 Key）
+const cities = [
+  { label: '北京', lat: 39.9042, lon: 116.4074 },
+  { label: '上海', lat: 31.2304, lon: 121.4737 },
+  { label: '广州', lat: 23.1291, lon: 113.2644 },
+  { label: '深圳', lat: 22.5431, lon: 114.0579 },
+  { label: '杭州', lat: 30.2741, lon: 120.1551 },
+  { label: '成都', lat: 30.5728, lon: 104.0668 },
+  { label: '武汉', lat: 30.5928, lon: 114.3055 },
+  { label: '西安', lat: 34.3416, lon: 108.9398 },
+  { label: '南京', lat: 32.0603, lon: 118.7969 },
+  { label: '重庆', lat: 29.4316, lon: 106.9123 },
+  { label: '天津', lat: 39.3434, lon: 117.3616 },
+  { label: '哈尔滨', lat: 45.8038, lon: 126.5350 },
+];
+
+function onCityChange(e: Event) {
+  const sel = (e.target as HTMLSelectElement).value;
+  const found = cities.find((c) => c.label === sel);
+  if (found) {
+    configStore.config.weather.city = found.label;
+    configStore.config.weather.latitude = found.lat;
+    configStore.config.weather.longitude = found.lon;
+    configStore.save();
+  }
+}
+
+async function onWeatherToggle() {
+  configStore.config.weather.enabled = !configStore.config.weather.enabled;
+  await configStore.save();
+}
+
 onMounted(async () => {
   autostart.value = await api.isAutostartEnabled();
   alwaysOnTop.value = configStore.config.window.always_on_top;
@@ -122,6 +154,20 @@ async function pickImage() {
           />
         </label>
         <p class="tip">仅影响背景，文字保持清晰</p>
+      </section>
+
+      <section class="group">
+        <h4><Icon name="sun" :size="14" /> 天气</h4>
+        <label class="line">
+          <span><Icon name="sun" :size="13" /> 启用天气</span>
+          <input type="checkbox" :checked="configStore.config.weather.enabled" @change="onWeatherToggle" />
+        </label>
+        <label class="line" v-if="configStore.config.weather.enabled">
+          <span><Icon name="pin" :size="13" /> 城市</span>
+          <select :value="configStore.config.weather.city" @change="onCityChange">
+            <option v-for="c in cities" :key="c.label" :value="c.label">{{ c.label }}</option>
+          </select>
+        </label>
       </section>
 
       <section class="group">

@@ -17,6 +17,7 @@ const defaultConfig: AppConfig = {
     le7: '#f1c40f', gt7: '#95a5a6',
   },
   encouragement: { sound: false, undo_window_seconds: 5 },
+  weather: { enabled: false, city: '北京', latitude: 39.9042, longitude: 116.4074 },
 };
 
 export const useConfigStore = defineStore('config', () => {

@@ -6,6 +6,7 @@ import type {
   UpdateSchedule,
   Encouragement,
   AppConfig,
+  Weather,
 } from './types';
 
 export const api = {
@@ -33,6 +34,11 @@ export const api = {
 
   openAttachment: (path: string) =>
     invoke<void>('open_attachment', { path }),
+
+  fetchWeather: (lat: number, lon: number, city: string) =>
+    invoke<Weather>('fetch_weather', { lat, lon, city }),
+
+  getLastWeather: () => invoke<Weather | null>('get_last_weather'),
 
   listEncouragements: () =>
     invoke<Encouragement[]>('list_encouragements'),

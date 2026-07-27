@@ -15,6 +15,8 @@ pub struct AppConfig {
     pub ddl_colors: DdlColors,
     #[serde(default)]
     pub encouragement: EncouragementConfig,
+    #[serde(default)]
+    pub weather: WeatherConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +85,18 @@ pub struct EncouragementConfig {
     pub undo_window_seconds: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeatherConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub city: String,      // 城市名（显示用）
+    #[serde(default)]
+    pub latitude: f64,     // 纬度
+    #[serde(default)]
+    pub longitude: f64,    // 经度
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -91,6 +105,7 @@ impl Default for AppConfig {
             startup: StartupConfig::default(),
             ddl_colors: DdlColors::default(),
             encouragement: EncouragementConfig::default(),
+            weather: WeatherConfig::default(),
         }
     }
 }
@@ -149,6 +164,17 @@ impl Default for EncouragementConfig {
         Self {
             sound: false,
             undo_window_seconds: default_undo_window(),
+        }
+    }
+}
+
+impl Default for WeatherConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            city: "北京".into(),
+            latitude: 39.9042,
+            longitude: 116.4074,
         }
     }
 }
