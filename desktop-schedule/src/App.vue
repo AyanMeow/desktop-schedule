@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow, getAllWindows } from '@tauri-apps/api/window';
+import { getCurrentWindow, getAllWindows, LogicalPosition, LogicalSize } from '@tauri-apps/api/window';
+import type { UnlistenFn } from '@tauri-apps/api/event';
 import { useScheduleStore } from './stores/schedules';
 import { useConfigStore } from './stores/config';
 import { useWeatherStore } from './stores/weather';
@@ -161,10 +162,42 @@ watch(expandedDate, async () => {
   }
 });
 
+// 窗口几何持久化：防抖保存位置/大小
+let geomTimer: number | undefined;
+let unlistenMoved: UnlistenFn | undefined;
+let unlistenResized: UnlistenFn | undefined;
+async function saveGeometry() {
+  const win = getCurrentWindow();
+  try {
+    const pos = await win.outerPosition();
+    const size = await win.outerSize();
+    // 转换物理像素→逻辑像素（除以缩放因子）
+    const sf = await win.scaleFactor();
+    configStore.config.window.x = Math.round(pos.x / sf);
+    configStore.config.window.y = Math.round(pos.y / sf);
+    configStore.config.window.width = Math.round(size.width / sf);
+    configStore.config.window.height = Math.round(size.height / sf);
+    await configStore.save();
+  } catch { /* 忽略 */ }
+}
+function debounceSaveGeometry() {
+  if (geomTimer) window.clearTimeout(geomTimer);
+  geomTimer = window.setTimeout(saveGeometry, 500);
+}
+
 onMounted(async () => {
   // 控制面板窗口不需要加载日程
   if (isPanel.value) return;
   await configStore.load();
+
+  // 恢复窗口几何（位置/大小）
+  const win = getCurrentWindow();
+  const w = configStore.config.window;
+  try {
+    await win.setPosition(new LogicalPosition(w.x, w.y));
+    await win.setSize(new LogicalSize(w.width, w.height));
+  } catch { /* 忽略 */ }
+
   await scheduleStore.refresh();
   locked.value = configStore.config.window.locked;
   menuLocked.value = locked.value;
@@ -175,6 +208,15 @@ onMounted(async () => {
     expandedDate.value = toISO(new Date());
   }
   await weatherStore.init();
+
+  // 监听窗口移动/缩放，防抖保存几何
+  unlistenMoved = await win.onMoved(() => debounceSaveGeometry());
+  unlistenResized = await win.onResized(() => debounceSaveGeometry());
+});
+
+onUnmounted(() => {
+  unlistenMoved?.();
+  unlistenResized?.();
 });
 </script>
 
