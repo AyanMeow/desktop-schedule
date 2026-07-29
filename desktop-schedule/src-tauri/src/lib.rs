@@ -4,7 +4,6 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, State, WindowEvent,
 };
-use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 mod config;
 mod db;
@@ -137,30 +136,63 @@ fn toggle_always_on_top(window: tauri::Window) -> Result<bool, String> {
     Ok(!cur)
 }
 
+// ===== 开机自启：直接操作注册表（绕过 autostart 插件的 os error 2 问题）=====
+#[cfg(windows)]
+const AUTOSTART_REGKEY: &str = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
+#[cfg(windows)]
+const AUTOSTART_NAME: &str = "DesktopSchedule";
+
 #[tauri::command]
-fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
-    let mgr = app.autolaunch();
-    if enabled {
-        mgr.enable().map_err(|e| e.to_string())?;
-    } else {
-        mgr.disable().map_err(|e| e.to_string())?;
+fn set_autostart(enabled: bool) -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        use winreg::enums::*;
+        use winreg::RegKey;
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let exe_path = exe.display().to_string();
+        if enabled {
+            let cmd = format!("\"{}\" --autostart", exe_path);
+            hkcu.open_subkey_with_flags(AUTOSTART_REGKEY, KEY_SET_VALUE)
+                .map_err(|e| e.to_string())?
+                .set_value(AUTOSTART_NAME, &cmd)
+                .map_err(|e| e.to_string())?;
+        } else {
+            // 忽略"值不存在"错误
+            let _ = hkcu
+                .open_subkey_with_flags(AUTOSTART_REGKEY, KEY_SET_VALUE)
+                .and_then(|k| k.delete_value(AUTOSTART_NAME));
+        }
+        Ok(enabled)
     }
-    Ok(enabled)
+    #[cfg(not(windows))]
+    {
+        let _ = enabled;
+        Err("仅支持 Windows".into())
+    }
 }
 
 #[tauri::command]
-fn is_autostart_enabled(app: tauri::AppHandle) -> bool {
-    app.autolaunch().is_enabled().unwrap_or(false)
+fn is_autostart_enabled() -> bool {
+    #[cfg(windows)]
+    {
+        use winreg::enums::*;
+        use winreg::RegKey;
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        hkcu.open_subkey_with_flags(AUTOSTART_REGKEY, KEY_READ)
+            .and_then(|k| k.get_value::<String, _>(AUTOSTART_NAME))
+            .is_ok()
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_autostart::init(
-            MacosLauncher::LaunchAgent,
-            Some(vec!["--autostart"]),
-        ))
         .manage(WindowState::default())
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {

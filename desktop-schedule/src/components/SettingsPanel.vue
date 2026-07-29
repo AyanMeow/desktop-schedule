@@ -79,9 +79,15 @@ async function onTop() {
   await save();
 }
 async function onAutostart() {
-  autostart.value = await api.setAutostart(autostart.value);
-  configStore.config.startup.auto_start = autostart.value;
-  await save();
+  try {
+    autostart.value = await api.setAutostart(autostart.value);
+    configStore.config.startup.auto_start = autostart.value;
+    await save();
+  } catch (e) {
+    alert('设置开机自启失败：' + e);
+    // 失败时回滚开关状态
+    autostart.value = await api.isAutostartEnabled();
+  }
 }
 
 async function pickTheme(t: Theme) {

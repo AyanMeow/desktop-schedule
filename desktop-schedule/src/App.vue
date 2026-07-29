@@ -209,6 +209,17 @@ onMounted(async () => {
   }
   await weatherStore.init();
 
+  // 同步开机自启状态：以 config 为准，确保注册表与配置一致
+  try {
+    const registered = await invoke<boolean>('is_autostart_enabled');
+    const want = configStore.config.startup.auto_start;
+    if (want && !registered) {
+      await invoke<boolean>('set_autostart', { enabled: true });
+    } else if (!want && registered) {
+      await invoke<boolean>('set_autostart', { enabled: false });
+    }
+  } catch (e) { console.error('autostart sync failed', e); /* 忽略 */ }
+
   // 监听窗口移动/缩放，防抖保存几何
   unlistenMoved = await win.onMoved(() => debounceSaveGeometry());
   unlistenResized = await win.onResized(() => debounceSaveGeometry());
