@@ -78,14 +78,13 @@ async function onTop() {
   configStore.config.window.always_on_top = alwaysOnTop.value;
   await save();
 }
-async function onAutostart() {
+async function onAutostart(checked: boolean) {
   try {
-    autostart.value = await api.setAutostart(autostart.value);
+    autostart.value = await api.setAutostart(checked);
     configStore.config.startup.auto_start = autostart.value;
     await save();
   } catch (e) {
     alert('设置开机自启失败：' + e);
-    // 失败时回滚开关状态
     autostart.value = await api.isAutostartEnabled();
   }
 }
@@ -208,7 +207,7 @@ async function pickImage() {
         </label>
         <label class="line">
           <span><Icon name="settings" :size="13" /> 开机自启</span>
-          <input type="checkbox" :checked="autostart" @change="onAutostart" />
+          <input type="checkbox" :checked="autostart" @change="(e) => onAutostart((e.target as HTMLInputElement).checked)" />
         </label>
       </section>
 
