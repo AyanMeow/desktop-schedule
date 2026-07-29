@@ -451,6 +451,12 @@ html, body, #app {
   padding: 0.7em 0.8em 1em;
   display: flex;
   flex-direction: column;
+  /* 隐藏滚动条但保留滚动功能（WebView2 基于 Chromium，两套前缀都加）*/
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/旧 Edge */
+}
+.content::-webkit-scrollbar {
+  display: none; /* Chrome/WebKit/WebView2 */
 }
 .resize-handle {
   position: absolute;
