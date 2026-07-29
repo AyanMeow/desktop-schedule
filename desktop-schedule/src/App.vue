@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow, getAllWindows, LogicalPosition, LogicalSize } from '@tauri-apps/api/window';
+import { listen } from '@tauri-apps/api/event';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { useScheduleStore } from './stores/schedules';
 import { useConfigStore } from './stores/config';
@@ -166,6 +167,7 @@ watch(expandedDate, async () => {
 let geomTimer: number | undefined;
 let unlistenMoved: UnlistenFn | undefined;
 let unlistenResized: UnlistenFn | undefined;
+let unlistenImported: UnlistenFn | undefined;
 async function saveGeometry() {
   const win = getCurrentWindow();
   try {
@@ -223,11 +225,17 @@ onMounted(async () => {
   // 监听窗口移动/缩放，防抖保存几何
   unlistenMoved = await win.onMoved(() => debounceSaveGeometry());
   unlistenResized = await win.onResized(() => debounceSaveGeometry());
+
+  // 监听导入日程事件，刷新显示
+  unlistenImported = await listen('schedules-imported', () => {
+    scheduleStore.refresh();
+  });
 });
 
 onUnmounted(() => {
   unlistenMoved?.();
   unlistenResized?.();
+  unlistenImported?.();
 });
 </script>
 

@@ -89,6 +89,40 @@ async function onAutostart(checked: boolean) {
   }
 }
 
+// 导入 / 导出
+const exporting = ref(false);
+const importing = ref(false);
+const dataMsg = ref('');
+
+async function onExport() {
+  dataMsg.value = '';
+  exporting.value = true;
+  try {
+    const path = await api.exportSchedules();
+    dataMsg.value = '已导出到：' + path;
+  } catch (e) {
+    dataMsg.value = '导出失败：' + e;
+  } finally {
+    exporting.value = false;
+  }
+}
+
+async function onImport() {
+  dataMsg.value = '';
+  importing.value = true;
+  try {
+    const count = await api.importSchedules();
+    dataMsg.value = `已导入 ${count} 条日程`;
+    // 通知主窗口重新加载日程
+    const { emit } = await import('@tauri-apps/api/event');
+    await emit('schedules-imported');
+  } catch (e) {
+    dataMsg.value = '导入失败：' + e;
+  } finally {
+    importing.value = false;
+  }
+}
+
 async function pickTheme(t: Theme) {
   if (t === 'dark') {
     configStore.config.window.bg_mode = 'dark';
@@ -209,6 +243,19 @@ async function pickImage() {
           <span><Icon name="settings" :size="13" /> 开机自启</span>
           <input type="checkbox" :checked="autostart" @change="(e) => onAutostart((e.target as HTMLInputElement).checked)" />
         </label>
+      </section>
+
+      <section class="group">
+        <h4><Icon name="note" :size="14" /> 数据</h4>
+        <div class="data-row">
+          <button class="data-btn" @click="onExport" :disabled="exporting">
+            <Icon name="note" :size="14" /> {{ exporting ? '导出中…' : '导出日程' }}
+          </button>
+          <button class="data-btn" @click="onImport" :disabled="importing">
+            <Icon name="image" :size="14" /> {{ importing ? '导入中…' : '导入日程' }}
+          </button>
+        </div>
+        <p class="data-tip" v-if="dataMsg">{{ dataMsg }}</p>
       </section>
 
       <div class="actions">
@@ -337,4 +384,18 @@ select option { background: #2a2c3a; color: #f0f0f5; }
   border-radius: 50%;
 }
 .chip-label { font-size: 11px; opacity: 0.9; }
+
+.data-row { display: flex; gap: 6px; }
+.data-btn {
+  flex: 1;
+  background: rgba(128,128,128,0.12);
+  border: 1px solid rgba(128,128,128,0.2);
+  color: inherit; opacity: 0.85;
+  padding: 8px 4px; border-radius: 6px;
+  font-size: 12px; cursor: pointer; font-family: inherit;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+}
+.data-btn:hover:not(:disabled) { background: rgba(128,128,128,0.22); opacity: 1; }
+.data-btn:disabled { opacity: 0.5; cursor: default; }
+.data-tip { font-size: 11px; opacity: 0.7; margin: 6px 0 0; word-break: break-all; }
 </style>

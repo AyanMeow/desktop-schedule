@@ -52,4 +52,8 @@ export const api = {
   toggleAlwaysOnTop: () => invoke<boolean>('toggle_always_on_top'),
   setAutostart: (enabled: boolean) => invoke<boolean>('set_autostart', { enabled }),
   isAutostartEnabled: () => invoke<boolean>('is_autostart_enabled'),
+
+  // 导入 / 导出
+  exportSchedules: () => invoke<string>('export_schedules'),
+  importSchedules: () => invoke<number>('import_schedules'),
 };

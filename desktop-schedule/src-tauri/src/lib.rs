@@ -100,6 +100,61 @@ fn get_last_weather(state: State<'_, Mutex<AppState>>) -> Option<weather::Weathe
     st.last_weather.clone()
 }
 
+// ============ 导入 / 导出 ============
+
+/// 导出全部日程为 JSON 文本，写到用户选择的文件
+#[tauri::command]
+async fn export_schedules(
+    state: State<'_, Mutex<AppState>>,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    use tauri_plugin_dialog::DialogExt;
+    // 生成内容
+    let content = {
+        let st = state.lock().map_err(|e| e.to_string())?;
+        let conn = st.db.0.lock().map_err(|e| e.to_string())?;
+        db::export_all(&conn).map_err(|e| e.to_string())?
+    };
+    // 弹保存对话框（file() + blocking_save_file）
+    let path = app
+        .dialog()
+        .file()
+        .add_filter("文本文件", &["txt"])
+        .set_file_name(format!(
+            "日程备份-{}.txt",
+            chrono::Local::now().format("%Y%m%d_%H%M%S")
+        ))
+        .blocking_save_file();
+    let path = path.ok_or_else(|| "未选择保存位置".to_string())?;
+    let path = path.into_path().map_err(|_| "路径无效".to_string())?;
+    // 写文件
+    std::fs::write(&path, content).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// 从用户选择的 txt 文件导入日程
+#[tauri::command]
+async fn import_schedules(
+    state: State<'_, Mutex<AppState>>,
+    app: tauri::AppHandle,
+) -> Result<usize, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let path = app
+        .dialog()
+        .file()
+        .add_filter("文本文件", &["txt"])
+        .blocking_pick_file();
+    let path = path.ok_or_else(|| "未选择文件".to_string())?;
+    let path = path.into_path().map_err(|_| "路径无效".to_string())?;
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let count = {
+        let st = state.lock().map_err(|e| e.to_string())?;
+        let conn = st.db.0.lock().map_err(|e| e.to_string())?;
+        db::import_all(&conn, &content).map_err(|e| e.to_string())?
+    };
+    Ok(count)
+}
+
 // ============ 配置命令 ============
 
 #[tauri::command]
@@ -309,6 +364,8 @@ pub fn run() {
             open_attachment,
             fetch_weather,
             get_last_weather,
+            export_schedules,
+            import_schedules,
             list_encouragements,
             // 配置
             get_config,

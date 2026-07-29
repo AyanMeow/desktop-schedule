@@ -414,3 +414,86 @@ pub fn list_encouragements(conn: &Connection) -> anyhow::Result<Vec<Encouragemen
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
 }
+
+// ============ 导入 / 导出 ============
+
+/// 导出全部日程为 JSON 字符串（含所有字段，保留 group_id 关联）
+pub fn export_all(conn: &Connection) -> anyhow::Result<String> {
+    let list = list_schedules_in_range(conn, "0000-01-01", "9999-12-31")?;
+    // 导出格式：带版本号的包装，便于未来兼容
+    let payload = serde_json::json!({
+        "app": "desktop-schedule",
+        "version": 1,
+        "exported_at": chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        "schedules": list,
+    });
+    Ok(serde_json::to_string_pretty(&payload)?)
+}
+
+/// 导入的单条日程（id 由导入时重新生成，其余字段保留）
+#[derive(Debug, Deserialize)]
+pub struct ImportItem {
+    pub group_id: Option<String>,
+    pub title: String,
+    pub date: String,
+    pub time_of_day: Option<String>,
+    pub note: Option<String>,
+    #[serde(default)]
+    pub priority: i64,
+    #[serde(default)]
+    pub has_ddl: bool,
+    pub ddl_at: Option<String>,
+    #[serde(default)]
+    pub completed: bool,
+    pub completed_at: Option<String>,
+    pub attachment: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+/// 导入日程（批量插入）。group_id 保留以维持跨天关联。
+/// 返回插入条数。
+pub fn import_all(conn: &Connection, json_text: &str) -> anyhow::Result<usize> {
+    // 兼容两种格式：包装对象 {schedules:[...]} 或裸数组 [...]
+    let items: Vec<ImportItem> = if json_text.trim_start().starts_with('[') {
+        serde_json::from_str(json_text)?
+    } else {
+        let v: serde_json::Value = serde_json::from_str(json_text)?;
+        if let Some(arr) = v.get("schedules") {
+            serde_json::from_value(arr.clone())?
+        } else {
+            return Err(anyhow::anyhow!("无法识别的导入格式"));
+        }
+    };
+
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut stmt = tx.prepare(
+            "INSERT INTO schedules
+                (group_id, title, date, time_of_day, note, priority, has_ddl, ddl_at,
+                 completed, completed_at, attachment, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        )?;
+        for it in &items {
+            stmt.execute(params![
+                it.group_id,
+                it.title,
+                it.date,
+                it.time_of_day,
+                it.note,
+                it.priority,
+                it.has_ddl as i64,
+                it.ddl_at,
+                it.completed as i64,
+                it.completed_at,
+                it.attachment,
+                it.created_at.as_ref().unwrap_or(&now),
+                it.updated_at.as_ref().unwrap_or(&now),
+            ])?;
+        }
+    }
+    tx.commit()?;
+    Ok(items.len())
+}
+
