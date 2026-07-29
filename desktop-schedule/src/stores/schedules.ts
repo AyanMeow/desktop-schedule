@@ -1,10 +1,12 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { api } from '../api';
+import { useConfigStore } from './config';
 import type { Schedule, NewSchedule, UpdateSchedule, ViewRange } from '../types';
 import { rangeFor } from '../utils/date';
 
 export const useScheduleStore = defineStore('schedules', () => {
+  const configStore = useConfigStore();
   // 当前视图基准日期（决定显示哪一周/月）
   const baseDate = ref(new Date());
   const viewRange = ref<ViewRange>('week');
@@ -41,6 +43,9 @@ export const useScheduleStore = defineStore('schedules', () => {
 
   function setRange(r: ViewRange) {
     viewRange.value = r;
+    // 持久化视图范围
+    configStore.config.view.range = r;
+    configStore.save();
     refresh();
   }
 
