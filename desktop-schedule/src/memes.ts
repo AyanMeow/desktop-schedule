@@ -5,12 +5,12 @@
 //   2. import 进来加到对应数组
 //   3. 不需要改其他代码
 
-import hot1 from '../assets/memes/hot1.svg';
-import hot2 from '../assets/memes/hot2.svg';
-import playful1 from '../assets/memes/playful1.svg';
-import playful2 from '../assets/memes/playful2.svg';
-import warm1 from '../assets/memes/warm1.svg';
-import warm2 from '../assets/memes/warm2.svg';
+import hot1 from './assets/memes/hot1.svg?url';
+import hot2 from './assets/memes/hot2.svg?url';
+import playful1 from './assets/memes/playful1.svg?url';
+import playful2 from './assets/memes/playful2.svg?url';
+import warm1 from './assets/memes/warm1.svg?url';
+import warm2 from './assets/memes/warm2.svg?url';
 
 export const MEME_BY_CATEGORY: Record<string, string[]> = {
   '热血': [hot1, hot2],
