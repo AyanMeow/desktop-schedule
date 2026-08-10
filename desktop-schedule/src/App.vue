@@ -200,12 +200,13 @@ onMounted(async () => {
     await win.setSize(new LogicalSize(w.width, w.height));
   } catch { /* 忽略 */ }
 
-  await scheduleStore.refresh();
+  // 先从 config 恢复视图设置，再 refresh（否则 refresh 用默认范围查询，日程不显示）
   locked.value = configStore.config.window.locked;
   menuLocked.value = locked.value;
   menuTop.value = configStore.config.window.always_on_top;
   scheduleStore.viewRange = (configStore.config.view.range as any) || 'week';
   scheduleStore.weekStart = (configStore.config.view.week_start as any) || 'monday';
+  await scheduleStore.refresh();
   if (configStore.config.startup.expand_today_on_launch) {
     expandedDate.value = toISO(new Date());
   }
