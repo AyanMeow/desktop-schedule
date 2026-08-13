@@ -32,7 +32,8 @@ watch(() => props.presetDate, (v) => {
   if (v) { startDate.value = v; endDate.value = v; }
 });
 
-const ddlDate = computed(() => endDate.value);
+// ddl 取实际结束日期：单日模式取 startDate，跨天模式取 endDate
+const ddlDate = computed(() => sameAsStart.value ? startDate.value : endDate.value);
 
 const dayCount = computed(() => {
   const s = new Date(startDate.value);
