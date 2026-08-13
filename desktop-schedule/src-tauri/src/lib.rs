@@ -234,14 +234,44 @@ fn is_autostart_enabled() -> bool {
         use winreg::enums::*;
         use winreg::RegKey;
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        hkcu.open_subkey_with_flags(AUTOSTART_REGKEY, KEY_READ)
-            .and_then(|k| k.get_value::<String, _>(AUTOSTART_NAME))
-            .is_ok()
+        // 读出注册表值，校验其指向的 exe 是否为当前进程
+        let registered = hkcu
+            .open_subkey_with_flags(AUTOSTART_REGKEY, KEY_READ)
+            .and_then(|k| k.get_value::<String, _>(AUTOSTART_NAME));
+        let stored = match registered {
+            Ok(v) => v,
+            Err(_) => return false, // 项不存在
+        };
+        // 注册表值格式: "C:\path\app.exe" --autostart
+        // 提取引号内的 exe 路径（或无引号时取首个空白前的 token）
+        let stored_exe = extract_exe_path(&stored);
+        let current = match std::env::current_exe() {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
+        // 路径归一化后比对（不区分大小写、统一分隔符）
+        let stored_norm = stored_exe.to_lowercase().replace('/', "\\");
+        let current_norm = current.display().to_string().to_lowercase().replace('/', "\\");
+        stored_norm == current_norm
     }
     #[cfg(not(windows))]
     {
         false
     }
+}
+
+/// 从注册表值（如 `"C:\app.exe" --autostart`）提取 exe 路径
+#[cfg(windows)]
+fn extract_exe_path(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.starts_with('"') {
+        // 带引号：取两个引号之间
+        if let Some(end) = trimmed[1..].find('"') {
+            return trimmed[1..1 + end].to_string();
+        }
+    }
+    // 无引号：取首个空白前
+    trimmed.split_whitespace().next().unwrap_or("").to_string()
 }
 
 pub fn run() {
