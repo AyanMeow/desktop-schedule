@@ -45,16 +45,35 @@ impl Db {
     }
 }
 
-/// 打开/创建数据库并执行建表迁移
+/// 打开/创建数据库并执行版本迁移
 pub fn open(path: &std::path::Path) -> anyhow::Result<Db> {
     let conn = Connection::open(path)?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
-    migrate(&conn)?;
-    seed_encouragements(&conn)?;
+    ensure_schema(&conn)?;
+    run_migrations(&conn)?;
     Ok(Db::new(conn))
 }
 
-fn migrate(conn: &Connection) -> anyhow::Result<()> {
+// ============ 数据库版本迁移框架 ============
+//
+// 【如何新增一个版本】（未来更新时按此操作）：
+// 1. 把 CURRENT_DB_VERSION 加 1（如 2 → 3）
+// 2. 在 run_migrations 里追加一个 `if version < N` 块：
+//        if version < 3 {
+//            // 迁移逻辑（必须幂等：重复执行不报错）
+//            version = 3;
+//        }
+// 3. 该块内的 SQL 操作要写成幂等（用 IF NOT EXISTS / 先检测再改）
+//
+// 全新用户：user_version 默认 0，从 v0 依次跑完所有迁移
+// 老用户：从自己的 user_version 跑到 CURRENT，跳过已执行的
+// 迁移函数必须幂等，保证重复执行安全。
+
+/// 当前数据库版本（每次需要数据迁移的发布都要 +1）
+const CURRENT_DB_VERSION: u32 = 2;
+
+/// 建表（含最新结构）。IF NOT EXISTS 对老库无副作用。
+fn ensure_schema(conn: &Connection) -> anyhow::Result<()> {
     conn.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS schedules (
@@ -90,14 +109,44 @@ fn migrate(conn: &Connection) -> anyhow::Result<()> {
         );
         ",
     )?;
-    // 兼容旧库：若 attachment 列不存在则补上
-    let has_attachment: bool = conn
-        .prepare("PRAGMA table_info(schedules)")?
-        .query_map([], |r| r.get::<_, String>(1))?
-        .filter_map(|r| r.ok())
-        .any(|name| name == "attachment");
-    if !has_attachment {
-        conn.execute("ALTER TABLE schedules ADD COLUMN attachment TEXT", [])?;
+    Ok(())
+}
+
+/// 执行版本迁移链。从 user_version 逐级升到 CURRENT_DB_VERSION。
+fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
+    let mut version: u32 =
+        conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? as u32;
+
+    // v0 → v1：schedules 表补 attachment 列（幂等：检测列是否存在）
+    if version < 1 {
+        let has_attachment: bool = conn
+            .prepare("PRAGMA table_info(schedules)")?
+            .query_map([], |r| r.get::<_, String>(1))?
+            .filter_map(|r| r.ok())
+            .any(|name| name == "attachment");
+        if !has_attachment {
+            conn.execute("ALTER TABLE schedules ADD COLUMN attachment TEXT", [])?;
+        }
+        version = 1;
+    }
+
+    // v1 → v2：鼓励语清空重建（替换为艾露猫风格文案）
+    // 幂等：DELETE 后 seed，重复执行结果一致
+    if version < 2 {
+        conn.execute("DELETE FROM encouragements", [])?;
+        seed_encouragements(conn)?;
+        version = 2;
+    }
+
+    // ---- 未来迁移在此追加（示例，勿删注释）----
+    // if version < 3 {
+    //     // 新的迁移逻辑（幂等）
+    //     version = 3;
+    // }
+
+    // 写回版本号
+    if version > 0 {
+        conn.execute_batch(&format!("PRAGMA user_version = {}", version))?;
     }
     Ok(())
 }
