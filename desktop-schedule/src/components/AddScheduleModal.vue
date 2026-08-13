@@ -208,7 +208,10 @@ async function submit() {
   overflow-y: auto;
   color: inherit;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.modal::-webkit-scrollbar { display: none; }
 .modal-head {
   display: flex;
   align-items: center;

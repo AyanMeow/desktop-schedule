@@ -283,7 +283,11 @@ async function pickImage() {
   max-height: 80vh; overflow-y: auto;
   color: inherit;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  /* 隐藏滚动条但保留滚动 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.modal::-webkit-scrollbar { display: none; }
 .modal-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px 10px;
