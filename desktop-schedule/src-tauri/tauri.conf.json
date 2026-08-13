@@ -24,7 +24,7 @@
         "alwaysOnTop": false,
         "skipTaskbar": true,
         "shadow": false,
-        "visible": true,
+        "visible": false,
         "url": "index.html"
       },
       {
@@ -38,7 +38,7 @@
         "decorations": true,
         "transparent": false,
         "skipTaskbar": false,
-        "visible": true,
+        "visible": false,
         "url": "index.html#panel"
       }
     ],

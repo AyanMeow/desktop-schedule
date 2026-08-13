@@ -314,6 +314,19 @@ pub fn run() {
             // 启动天气定时刷新（每 30 分钟）
             weather::start_refresh_loop(app.handle().clone());
 
+            // 窗口可见性：检测 --autostart 参数
+            // 自启模式：只显示 main 贴片，不弹控制面板（静默驻留托盘）
+            // 正常启动：显示 main 贴片 + taskbar 控制面板
+            let is_autostart = std::env::args().any(|a| a == "--autostart");
+            if let Some(main_win) = app.get_webview_window("main") {
+                let _ = main_win.show();
+            }
+            if !is_autostart {
+                if let Some(tb_win) = app.get_webview_window("taskbar") {
+                    let _ = tb_win.show();
+                }
+            }
+
             // 托盘菜单
             let panel = MenuItem::with_id(app, "panel", "控制面板", true, None::<&str>)?;
             let toggle_widget = MenuItem::with_id(app, "toggle_widget", "显示/隐藏贴片", true, None::<&str>)?;
