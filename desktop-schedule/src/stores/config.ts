@@ -35,6 +35,8 @@ export const useConfigStore = defineStore('config', () => {
   }
 
   async function save() {
+    // 守卫：load 完成前禁止保存，避免把内存默认值覆盖用户配置
+    if (!loaded.value) return;
     await api.saveConfig(config.value);
   }
 
