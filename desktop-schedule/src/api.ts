@@ -48,6 +48,8 @@ export const api = {
   saveConfig: (cfg: AppConfig) => invoke<void>('save_config', { cfg }),
 
   // 窗口
+  showWindow: (label: string) => invoke<void>('show_window', { label }),
+  isAutostartFlag: () => invoke<boolean>('is_autostart_flag'),
   toggleLock: () => invoke<boolean>('toggle_lock'),
   toggleAlwaysOnTop: () => invoke<boolean>('toggle_always_on_top'),
   setAutostart: (enabled: boolean) => invoke<boolean>('set_autostart', { enabled }),

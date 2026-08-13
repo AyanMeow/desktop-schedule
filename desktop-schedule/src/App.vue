@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { api } from './api';
 import { getCurrentWindow, getAllWindows, LogicalPosition, LogicalSize } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import type { UnlistenFn } from '@tauri-apps/api/event';
@@ -188,8 +189,14 @@ function debounceSaveGeometry() {
 }
 
 onMounted(async () => {
-  // 控制面板窗口不需要加载日程
-  if (isPanel.value) return;
+  // 控制面板窗口不需要加载日程，但需要由前端控制 show 时机
+  if (isPanel.value) {
+    const autostartFlag = await api.isAutostartFlag();
+    if (!autostartFlag) {
+      await api.showWindow('taskbar');
+    }
+    return;
+  }
   await configStore.load();
 
   // 恢复窗口几何（位置/大小）
@@ -231,6 +238,13 @@ onMounted(async () => {
   unlistenImported = await listen('schedules-imported', () => {
     scheduleStore.refresh();
   });
+
+  // 所有加载完成，显示窗口（避免默认值闪烁）
+  await api.showWindow('main');
+  const autostartFlag = await api.isAutostartFlag();
+  if (!autostartFlag) {
+    await api.showWindow('taskbar');
+  }
 });
 
 onUnmounted(() => {

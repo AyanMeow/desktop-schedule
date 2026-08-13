@@ -18,6 +18,9 @@ pub struct AppState {
     pub last_weather: Option<weather::Weather>,
 }
 
+/// 启动时是否带 --autostart 参数（供前端查询）
+pub struct IsAutostartFlag(pub bool);
+
 // ============ 日程命令 ============
 
 // 辅助：锁定 state 并取 db 连接 guard 的闭包包装，避免 MutexGuard 生命周期问题。
@@ -169,6 +172,22 @@ fn save_config(state: State<'_, Mutex<AppState>>, cfg: config::AppConfig) -> Res
     config::save(&st.config_path, &cfg).map_err(|e| e.to_string())
 }
 
+/// 前端加载完成后调用，显示指定窗口
+#[tauri::command]
+fn show_window(app: tauri::AppHandle, label: String) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window(&label) {
+        win.show().map_err(|e| e.to_string())?;
+        win.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// 查询启动时是否带 --autostart 参数
+#[tauri::command]
+fn is_autostart_flag(flag: State<'_, IsAutostartFlag>) -> bool {
+    flag.0
+}
+
 // ============ 窗口命令（沿用 M0） ============
 
 #[tauri::command]
@@ -314,18 +333,11 @@ pub fn run() {
             // 启动天气定时刷新（每 30 分钟）
             weather::start_refresh_loop(app.handle().clone());
 
-            // 窗口可见性：检测 --autostart 参数
-            // 自启模式：只显示 main 贴片，不弹控制面板（静默驻留托盘）
-            // 正常启动：显示 main 贴片 + taskbar 控制面板
+            // 窗口可见性：不在 Rust 端 show，由前端加载完成后调 show_window 命令
+            // 这样用户看到的是加载完毕的正确界面，无默认值闪烁
+            // 自启参数存在 AppState 供前端查询
             let is_autostart = std::env::args().any(|a| a == "--autostart");
-            if let Some(main_win) = app.get_webview_window("main") {
-                let _ = main_win.show();
-            }
-            if !is_autostart {
-                if let Some(tb_win) = app.get_webview_window("taskbar") {
-                    let _ = tb_win.show();
-                }
-            }
+            app.manage(IsAutostartFlag(is_autostart));
 
             // 托盘菜单
             let panel = MenuItem::with_id(app, "panel", "控制面板", true, None::<&str>)?;
@@ -414,6 +426,8 @@ pub fn run() {
             get_config,
             save_config,
             // 窗口
+            show_window,
+            is_autostart_flag,
             toggle_lock,
             set_opacity,
             toggle_always_on_top,
