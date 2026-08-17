@@ -37,11 +37,14 @@ const locked = ref(false);
 const expandedDate = ref<string | null>(null);
 const showAdd = ref(false);
 const showAchievements = ref(false);
-// 更新公告（仅控制面板窗口使用）
+// 更新公告弹窗（主贴片展示）
 const whatsNew = ref<WhatsNew | null>(null);
 async function dismissWhatsNew() {
+  const v = whatsNew.value?.version;
   whatsNew.value = null;
   await api.markVersionSeen().catch(() => { /* 忽略，下次还会提示 */ });
+  // 同步内存配置：防止后续几何保存把旧值回写、导致公告反复弹
+  if (v) configStore.config.update.last_seen_version = v;
 }
 const showSettings = ref(false);
 const showMenu = ref(false);
@@ -221,8 +224,6 @@ onMounted(async () => {
     if (!autostartFlag) {
       await api.showWindow('taskbar');
     }
-    // 更新后首次打开：有未读的版本公告则浮层展示
-    whatsNew.value = await api.getWhatsNew().catch(() => null);
     return;
   }
   await configStore.load();
@@ -250,6 +251,8 @@ onMounted(async () => {
   void achievementsStore.load();
   // 挂载后台更新事件（available/progress/ready）
   void updateStore.init();
+  // 更新后首次打开：主贴片弹窗展示本版公告
+  whatsNew.value = await api.getWhatsNew().catch(() => null);
 
   // 同步开机自启状态：以 config 为准，确保注册表与配置一致
   try {
@@ -293,13 +296,6 @@ onUnmounted(() => {
   <div v-if="isPanel" class="panel">
     <h2><Icon name="calendar" :size="20" /> 桌面日程</h2>
     <p class="panel-tip">桌面贴片始终显示，不受此窗口影响</p>
-
-    <!-- 更新公告浮层：更新后首次打开时展示 -->
-    <div v-if="whatsNew" class="whatsnew">
-      <h3>✨ 已更新到 v{{ whatsNew.version }}</h3>
-      <div class="whatsnew-notes">{{ whatsNew.notes }}</div>
-      <button class="whatsnew-btn" @click="dismissWhatsNew">知道了</button>
-    </div>
 
     <p v-if="notReadyTip" class="panel-tip" style="color:#d97706;">{{ notReadyTip }}</p>
     <button class="panel-btn primary" @click="panelFocusWidget">
@@ -391,6 +387,15 @@ onUnmounted(() => {
     <EncouragementToast />
     <AchievementToast />
     <UpdateBar />
+
+    <!-- 更新公告弹窗：更新后首次打开时展示，点击「此版本不再显示」关闭 -->
+    <div v-if="whatsNew" class="wn-overlay" @click.self="dismissWhatsNew">
+      <div class="wn-modal">
+        <h3 class="wn-title"><Icon name="calendar" :size="18" /> 已更新到 v{{ whatsNew.version }}</h3>
+        <div class="wn-notes">{{ whatsNew.notes }}</div>
+        <button class="wn-btn" @click="dismissWhatsNew">此版本不再显示</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -558,47 +563,60 @@ html, body, #app {
   opacity: 0.55;
   text-align: center;
 }
-/* 更新公告浮层：覆盖整个控制面板窗口 */
-.whatsnew {
+
+/* 更新公告弹窗（主贴片，主题变量配色） */
+.wn-overlay {
   position: fixed;
   inset: 0;
-  z-index: 50;
-  background: #fbfbfd;
-  padding: 14px 12px 10px;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wn-modal {
+  width: min(480px, 88vw);
+  max-height: 80vh;
   display: flex;
   flex-direction: column;
+  background: var(--modal-bg, #232634);
+  color: var(--app-fg, #e8eaf2);
+  border-radius: 16px;
+  padding: 18px 20px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
 }
-.whatsnew h3 {
-  margin: 0 0 8px;
-  font-size: 13px;
-  color: #1a1a2e;
+.wn-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 16px;
+  color: var(--accent, #6c8cff);
 }
-.whatsnew-notes {
+.wn-notes {
   flex: 1;
   overflow-y: auto;
   scrollbar-width: none;
   white-space: pre-wrap;
-  font-size: 11px;
-  line-height: 1.55;
-  color: #444;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 8px;
-  padding: 8px 10px;
-  background: #fff;
-}
-.whatsnew-notes::-webkit-scrollbar { display: none; }
-.whatsnew-btn {
-  margin-top: 8px;
-  padding: 7px 0;
-  border: none;
-  border-radius: 8px;
-  background: #4a6cf7;
-  color: #fff;
   font-size: 13px;
+  line-height: 1.6;
+  color: var(--app-fg-soft, #9aa0b4);
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.wn-notes::-webkit-scrollbar { display: none; }
+.wn-btn {
+  margin-top: 14px;
+  padding: 10px 0;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent, #6c8cff);
+  color: #fff;
+  font-size: 14px;
   cursor: pointer;
 }
-.whatsnew-btn:hover { filter: brightness(1.08); }
-
+.wn-btn:hover { filter: brightness(1.08); }
 .panel-btn {
   width: 100%;
   padding: 12px;
