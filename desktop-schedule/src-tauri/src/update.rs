@@ -392,15 +392,23 @@ pub fn check_and_download(
 
 // ============ 应用（覆盖式换壳） ============
 
-/// 用下载好的 exe 替换当前程序并重启
+/// 用下载好的 exe 替换当前程序并重启。
+/// 先复制新 exe 到目标同目录（.new），再两次瞬时 rename——任何时刻被强杀，
+/// 原路径都存在完整可用的 exe，不存在"复制中"空窗。
 pub fn apply_update(app: &tauri::AppHandle, downloaded: &PathBuf) -> Result<()> {
     let cur = std::env::current_exe().context("获取当前程序路径失败")?;
     let old = cur.with_extension("exe.old");
+    let new = cur.with_extension("exe.new");
     let _ = std::fs::remove_file(&old); // 清理上次残留
+    let _ = std::fs::remove_file(&new);
+
+    // 1) 同目录复制（同卷保证 rename 是瞬时元数据操作）
+    std::fs::copy(downloaded, &new).context("复制新版本失败")?;
+    // 2) 瞬时换壳：旧→.old，.new→正式名
     std::fs::rename(&cur, &old).context("重命名当前程序失败")?;
-    if let Err(e) = std::fs::copy(downloaded, &cur) {
+    if let Err(e) = std::fs::rename(&new, &cur) {
         let _ = std::fs::rename(&old, &cur); // 回滚
-        return Err(anyhow::anyhow!("写入新版本失败：{e}（已回滚）"));
+        return Err(anyhow::anyhow!("换壳失败：{e}（已回滚）"));
     }
     std::process::Command::new(&cur)
         .spawn()
@@ -409,10 +417,14 @@ pub fn apply_update(app: &tauri::AppHandle, downloaded: &PathBuf) -> Result<()> 
     Ok(())
 }
 
-/// 启动时清理换壳残留（.old 与半成品）
-pub fn cleanup_leftovers() {
+/// 启动时清理残留：换壳 .old/.new、未完成的下载半成品 download.part
+pub fn cleanup_leftovers(app: &tauri::AppHandle) {
     if let Ok(cur) = std::env::current_exe() {
         let _ = std::fs::remove_file(cur.with_extension("exe.old"));
+        let _ = std::fs::remove_file(cur.with_extension("exe.new"));
+    }
+    if let Some(dir) = app.path().app_data_dir().ok() {
+        let _ = std::fs::remove_file(dir.join("updates").join("download.part"));
     }
 }
 
@@ -477,7 +489,6 @@ pub fn start_check_loop(app: tauri::AppHandle) {
                         check_with_retry(&mode2, &manual2, &source2, 5, Duration::from_secs(30))
                     })
                     .await;
-                    mark_last_check(&cfg_path);
 
                     if let Ok(Ok(info)) = res {
                         if info.has_update && !info.asset_url.is_empty() {
@@ -489,7 +500,7 @@ pub fn start_check_loop(app: tauri::AppHandle) {
                             let source3 = source_cfg.clone();
                             let info3 = info.clone();
                             let dir3 = updates_dir.clone();
-                            let _ = tauri::async_runtime::spawn_blocking(move || {
+                            let dl = tauri::async_runtime::spawn_blocking(move || {
                                 let mut last_err: Option<anyhow::Error> = None;
                                 for i in 0..3 {
                                     let fresh = check_once(&mode3, &manual3, &source3)
@@ -511,8 +522,17 @@ pub fn start_check_loop(app: tauri::AppHandle) {
                                 Err(last_err.unwrap_or_else(|| anyhow::anyhow!("下载失败")))
                             })
                             .await;
+                            // 记账时机：下载成功才记——下载中断则下次启动重新检查重下，
+                            // 避免"检查过但没下完"导致 20h 内不再发现该更新
+                            if matches!(dl, Ok(Ok(()))) {
+                                mark_last_check(&cfg_path);
+                            }
+                        } else {
+                            // 无更新，正常记账
+                            mark_last_check(&cfg_path);
                         }
                     }
+                    // 检查失败（5 次重试后仍不通）不记账：下次启动继续尝试
                 }
             }
             tokio::time::sleep(Duration::from_secs(24 * 3600)).await;

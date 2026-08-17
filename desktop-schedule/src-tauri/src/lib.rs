@@ -657,8 +657,8 @@ pub fn run() {
             // 启动天气定时刷新（每 30 分钟）
             weather::start_refresh_loop(app.handle().clone());
 
-            // 自动更新：清理换壳残留 + 每日检查循环
-            update::cleanup_leftovers();
+            // 自动更新：清理换壳残留与下载半成品 + 每日检查循环
+            update::cleanup_leftovers(app.handle());
             update::start_check_loop(app.handle().clone());
 
             // 窗口可见性：不在 Rust 端 show，由前端加载完成后调 show_window 命令
