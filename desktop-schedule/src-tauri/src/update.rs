@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 
-const RELEASE_API: &str = "https://api.github.com/repos/AyanMeow/desktop-schedule/releases/latest";
+const GITHUB_API: &str = "https://api.github.com/repos/AyanMeow/desktop-schedule/releases/latest";
+const GITEE_API: &str = "https://gitee.com/api/v5/repos/ayanmeow/desktop-schedule/releases/latest";
 const EXE_NAME: &str = "desktop-schedule.exe";
 /// GitHub API 要求所有请求带 User-Agent
 const UA: &str = concat!("desktop-schedule-updater/", env!("CARGO_PKG_VERSION"));
@@ -155,6 +156,8 @@ struct Release {
 #[derive(serde::Deserialize)]
 struct Asset {
     name: String,
+    // Gitee 附件字段兼容（browser_download_url / download_url）
+    #[serde(default, alias = "download_url")]
     browser_download_url: String,
     #[serde(default)]
     size: i64,
@@ -179,11 +182,26 @@ fn parse_version(s: &str) -> Option<(u64, u64, u64)> {
     Some((a, b, c))
 }
 
-/// 单次检查（不重试）
-pub fn check_once(mode: &str, manual: &str) -> Result<UpdateInfo> {
+fn newer(a: &str, b: &str) -> bool {
+    match (parse_version(a), parse_version(b)) {
+        (Some(x), Some(y)) => x > y,
+        _ => false,
+    }
+}
+
+fn api_url(source: &str) -> &'static str {
+    if source == "gitee" {
+        GITEE_API
+    } else {
+        GITHUB_API
+    }
+}
+
+/// 对单一源做一次检查（不重试）
+fn check_source(mode: &str, manual: &str, source: &str) -> Result<UpdateInfo> {
     let proxy = resolve_proxy(mode, manual);
     let client = build_client(proxy.as_deref())?;
-    let resp = client.get(RELEASE_API).send()?.error_for_status()?;
+    let resp = client.get(api_url(source)).send()?.error_for_status()?;
     let rel: Release = resp.json()?;
     let cur = current_version();
     let latest = rel.tag_name.trim().trim_start_matches('v').to_string();
@@ -197,21 +215,47 @@ pub fn check_once(mode: &str, manual: &str) -> Result<UpdateInfo> {
         current: cur,
         latest,
         notes: rel.body.unwrap_or_default(),
-        asset_url: asset.map(|a| a.browser_download_url.clone()).unwrap_or_default(),
+        asset_url: asset
+            .map(|a| a.browser_download_url.clone())
+            .unwrap_or_default(),
         asset_size: asset.map(|a| a.size).unwrap_or(0),
     })
+}
+
+/// 按配置的更新源检查：auto = 双源各查一次取版本较新者（一源失败用另一源）
+pub fn check_once(mode: &str, manual: &str, source_cfg: &str) -> Result<UpdateInfo> {
+    match source_cfg {
+        "gitee" => check_source(mode, manual, "gitee"),
+        "github" => check_source(mode, manual, "github"),
+        _ => match (
+            check_source(mode, manual, "gitee"),
+            check_source(mode, manual, "github"),
+        ) {
+            (Ok(g), Ok(h)) => {
+                if newer(&h.latest, &g.latest) {
+                    Ok(h)
+                } else {
+                    Ok(g)
+                }
+            }
+            (Ok(g), Err(_)) => Ok(g),
+            (Err(_), Ok(h)) => Ok(h),
+            (Err(e), Err(_)) => Err(e),
+        },
+    }
 }
 
 /// 带重试的检查
 pub fn check_with_retry(
     mode: &str,
     manual: &str,
+    source_cfg: &str,
     attempts: u32,
     interval: Duration,
 ) -> Result<UpdateInfo> {
     let mut last_err: Option<anyhow::Error> = None;
     for i in 0..attempts {
-        match check_once(mode, manual) {
+        match check_once(mode, manual, source_cfg) {
             Ok(info) => return Ok(info),
             Err(e) => {
                 last_err = Some(e);
@@ -319,16 +363,17 @@ pub fn check_and_download(
     app: &tauri::AppHandle,
     mode: &str,
     manual: &str,
+    source_cfg: &str,
     updates_dir: &PathBuf,
 ) -> Result<UpdateInfo> {
-    let info = check_with_retry(mode, manual, 3, Duration::from_secs(5))?;
+    let info = check_with_retry(mode, manual, source_cfg, 3, Duration::from_secs(5))?;
     if !info.has_update || info.asset_url.is_empty() {
         anyhow::bail!("当前已是最新版本");
     }
     let mut last: Option<anyhow::Error> = None;
     for i in 0..3 {
         // 每次重试用最新 info（asset_url 可能因 Release 更新而变化）
-        let fresh = check_once(mode, manual).unwrap_or_else(|_| info.clone());
+        let fresh = check_once(mode, manual, source_cfg).unwrap_or_else(|_| info.clone());
         match download_blocking(app, mode, manual, &fresh, updates_dir) {
             Ok(_) => {
                 let _ = app.emit("update-ready", &fresh);
@@ -405,6 +450,7 @@ pub fn start_check_loop(app: tauri::AppHandle) {
                             (
                                 cfg.update.proxy_mode.clone(),
                                 cfg.update.proxy.clone(),
+                                cfg.update.source.clone(),
                                 st.config_path.clone(),
                                 cfg.update.auto_check,
                                 cfg.update.last_check.clone(),
@@ -415,7 +461,7 @@ pub fn start_check_loop(app: tauri::AppHandle) {
                 }
             };
 
-            if let Some((mode, manual, cfg_path, enabled, last)) = parsed {
+            if let Some((mode, manual, source_cfg, cfg_path, enabled, last)) = parsed {
                 if enabled && should_check(&last) {
                     let updates_dir = app
                         .path()
@@ -426,8 +472,9 @@ pub fn start_check_loop(app: tauri::AppHandle) {
                     // 检查（重试 5 次间隔 30s）
                     let mode2 = mode.clone();
                     let manual2 = manual.clone();
+                    let source2 = source_cfg.clone();
                     let res = tauri::async_runtime::spawn_blocking(move || {
-                        check_with_retry(&mode2, &manual2, 5, Duration::from_secs(30))
+                        check_with_retry(&mode2, &manual2, &source2, 5, Duration::from_secs(30))
                     })
                     .await;
                     mark_last_check(&cfg_path);
@@ -439,12 +486,13 @@ pub fn start_check_loop(app: tauri::AppHandle) {
                             let app3 = app.clone();
                             let mode3 = mode.clone();
                             let manual3 = manual.clone();
+                            let source3 = source_cfg.clone();
                             let info3 = info.clone();
                             let dir3 = updates_dir.clone();
                             let _ = tauri::async_runtime::spawn_blocking(move || {
                                 let mut last_err: Option<anyhow::Error> = None;
                                 for i in 0..3 {
-                                    let fresh = check_once(&mode3, &manual3)
+                                    let fresh = check_once(&mode3, &manual3, &source3)
                                         .unwrap_or_else(|_| info3.clone());
                                     match download_blocking(&app3, &mode3, &manual3, &fresh, &dir3)
                                     {

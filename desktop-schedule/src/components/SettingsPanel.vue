@@ -167,6 +167,10 @@ async function onProxyInput(e: Event) {
   configStore.config.update.proxy = (e.target as HTMLInputElement).value.trim();
   await save();
 }
+async function onUpdateSource(e: Event) {
+  configStore.config.update.source = (e.target as HTMLSelectElement).value;
+  await save();
+}
 async function onDetectProxy() {
   detectMsg.value = '检测中…';
   const r = await api.detectUpdateProxy().catch(() => null);
@@ -297,6 +301,14 @@ async function onDetectProxy() {
         <label class="line">
           <span>每日自动检查</span>
           <input type="checkbox" :checked="configStore.config.update.auto_check" @change="onAutoCheck" />
+        </label>
+        <label class="line">
+          <span>更新源</span>
+          <select :value="configStore.config.update.source" @change="onUpdateSource">
+            <option value="auto">自动（双源取新）</option>
+            <option value="gitee">Gitee（国内直连）</option>
+            <option value="github">GitHub</option>
+          </select>
         </label>
         <label class="line">
           <span>代理</span>

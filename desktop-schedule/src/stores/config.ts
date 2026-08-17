@@ -19,7 +19,7 @@ const defaultConfig: AppConfig = {
   },
   encouragement: { sound: false, undo_window_seconds: 5 },
   weather: { enabled: false, city: '北京', latitude: 39.9042, longitude: 116.4074 },
-  update: { auto_check: true, proxy_mode: 'auto', proxy: '', last_check: '', last_seen_version: '' },
+  update: { auto_check: true, proxy_mode: 'auto', proxy: '', last_check: '', last_seen_version: '', source: 'auto' },
 };
 
 export const useConfigStore = defineStore('config', () => {

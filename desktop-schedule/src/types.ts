@@ -107,6 +107,7 @@ export interface UpdateConfig {
   proxy: string;      // manual 模式的代理地址
   last_check: string; // 上次检查时间
   last_seen_version: string; // 已读公告的版本
+  source: string;     // 更新源 'auto' | 'gitee' | 'github'
 }
 
 // ============ 自动更新 ============

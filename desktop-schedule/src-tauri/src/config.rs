@@ -113,6 +113,8 @@ pub struct UpdateConfig {
     pub last_check: String,        // 上次检查时间（ISO），防频繁重启重复查
     #[serde(default)]
     pub last_seen_version: String, // 用户已查看过公告的版本；与当前不一致时控制面板显示更新公告
+    #[serde(default = "default_update_source")]
+    pub source: String,           // 更新源："auto"（双源取新）| "gitee" | "github"
 }
 
 impl Default for UpdateConfig {
@@ -123,6 +125,7 @@ impl Default for UpdateConfig {
             proxy: String::new(),
             last_check: String::new(),
             last_seen_version: String::new(),
+            source: "auto".into(),
         }
     }
 }
@@ -228,6 +231,7 @@ fn default_delay() -> u64 { 5 }
 fn default_undo_window() -> u64 { 5 }
 fn default_auto_check() -> bool { true }
 fn default_proxy_mode() -> String { "auto".into() }
+fn default_update_source() -> String { "auto".into() }
 fn default_c_overdue() -> String { "#c0392b".into() }
 fn default_c_le1() -> String { "#e74c3c".into() }
 fn default_c_le3() -> String { "#e67e22".into() }

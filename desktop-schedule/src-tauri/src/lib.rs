@@ -84,13 +84,13 @@ where
 
 #[tauri::command]
 async fn check_update(state: State<'_, Mutex<AppState>>) -> Result<update::UpdateInfo, String> {
-    let (mode, manual) = {
+    let (mode, manual, source) = {
         let st = state.lock().map_err(|e| e.to_string())?;
         let cfg = config::load(&st.config_path).map_err(|e| e.to_string())?;
-        (cfg.update.proxy_mode, cfg.update.proxy)
+        (cfg.update.proxy_mode, cfg.update.proxy, cfg.update.source)
     };
     run_blocking(move || {
-        update::check_with_retry(&mode, &manual, 3, std::time::Duration::from_secs(5))
+        update::check_with_retry(&mode, &manual, &source, 3, std::time::Duration::from_secs(5))
     })
     .await
 }
@@ -100,7 +100,7 @@ async fn download_update(
     app: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
-    let (mode, manual, dir) = {
+    let (mode, manual, source, dir) = {
         let st = state.lock().map_err(|e| e.to_string())?;
         let cfg = config::load(&st.config_path).map_err(|e| e.to_string())?;
         let dir = app
@@ -108,9 +108,17 @@ async fn download_update(
             .app_data_dir()
             .map_err(|e| e.to_string())?
             .join("updates");
-        (cfg.update.proxy_mode, cfg.update.proxy, dir)
+        (
+            cfg.update.proxy_mode,
+            cfg.update.proxy,
+            cfg.update.source,
+            dir,
+        )
     };
-    run_blocking(move || update::check_and_download(&app, &mode, &manual, &dir).map(|_| ())).await
+    run_blocking(move || {
+        update::check_and_download(&app, &mode, &manual, &source, &dir).map(|_| ())
+    })
+    .await
 }
 
 #[tauri::command]

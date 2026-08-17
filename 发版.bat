@@ -23,10 +23,12 @@ cd ..
 echo [2/5] 重新生成 README（简介 + 更新公告）...
 copy /b readme-intro.md + 更新公告.md README.md >nul
 
-echo [3/5] 提交并推送 GitHub（走 Clash 代理）...
+echo [3/5] 提交并推送 GitHub + Gitee（走 Clash 代理）...
 git add -A
 git commit -m "release: v%VER%"
 git push
+if errorlevel 1 goto :fail
+git push gitee main
 if errorlevel 1 goto :fail
 
 echo [4/5] 计算 SHA-256 并创建 GitHub Release ...
