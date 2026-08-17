@@ -70,7 +70,7 @@ pub fn open(path: &std::path::Path) -> anyhow::Result<Db> {
 // 迁移函数必须幂等，保证重复执行安全。
 
 /// 当前数据库版本（每次需要数据迁移的发布都要 +1）
-const CURRENT_DB_VERSION: u32 = 2;
+const CURRENT_DB_VERSION: u32 = 3;
 
 /// 建表（含最新结构）。IF NOT EXISTS 对老库无副作用。
 fn ensure_schema(conn: &Connection) -> anyhow::Result<()> {
@@ -138,10 +138,21 @@ fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
         version = 2;
     }
 
+    // v2 → v3：成就系统——解锁记录表（幂等：IF NOT EXISTS）
+    if version < 3 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS achievements (
+                id          TEXT PRIMARY KEY,
+                unlocked_at TEXT NOT NULL
+            );",
+        )?;
+        version = 3;
+    }
+
     // ---- 未来迁移在此追加（示例，勿删注释）----
-    // if version < 3 {
+    // if version < 4 {
     //     // 新的迁移逻辑（幂等）
-    //     version = 3;
+    //     version = 4;
     // }
 
     // 写回版本号
@@ -374,6 +385,106 @@ pub fn count_by_group(conn: &Connection, group_id: &str) -> anyhow::Result<i64> 
         |r| r.get(0),
     )?;
     Ok(n)
+}
+
+// ============ 成就系统 ============
+
+/// 成就统计（防刷口径：COUNT(DISTINCT schedule_id)，每条日程一生只计一次完成）
+#[derive(Debug, Clone, Serialize)]
+pub struct AchievementStats {
+    pub total: i64,          // 累计完成条数
+    pub max_daily: i64,      // 单日最大完成条数
+    pub max_streak: i64,     // 历史最长连续天数
+    pub current_streak: i64, // 当前连续天数（到今天/昨天为止仍连续则为活续，否则 0）
+}
+
+/// 汇总成就统计数据（全部基于 completion_log，去重口径）
+pub fn achievement_stats(conn: &Connection) -> anyhow::Result<AchievementStats> {
+    let total: i64 = conn.query_row(
+        "SELECT COUNT(DISTINCT schedule_id) FROM completion_log WHERE schedule_id IS NOT NULL",
+        [],
+        |r| r.get(0),
+    )?;
+    let max_daily: Option<i64> = conn.query_row(
+        "SELECT MAX(c) FROM (
+            SELECT COUNT(DISTINCT schedule_id) AS c
+            FROM completion_log
+            WHERE completed_at IS NOT NULL
+            GROUP BY substr(completed_at, 1, 10)
+        )",
+        [],
+        |r| r.get(0),
+    )?;
+
+    // 有完成记录的日期列表（升序），用于计算连续天数
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT substr(completed_at, 1, 10)
+         FROM completion_log
+         WHERE completed_at IS NOT NULL
+         ORDER BY 1",
+    )?;
+    let dates: Vec<NaiveDate> = stmt
+        .query_map([], |r| r.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .filter_map(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok())
+        .collect();
+
+    // 一遍扫描：最长连续段（日期已升序，相邻差一天即为连续）
+    let mut max_streak: i64 = 0;
+    let mut run: i64 = 0;
+    let mut prev: Option<NaiveDate> = None;
+    for d in &dates {
+        let consecutive = prev.is_some_and(|p| p.succ_opt() == Some(*d));
+        run = if consecutive { run + 1 } else { 1 };
+        max_streak = max_streak.max(run);
+        prev = Some(*d);
+    }
+
+    // 当前连续：最后一次完成是今天或昨天（续命惯例）时，从该日往回逐日数
+    let today = chrono::Local::now().date_naive();
+    let mut current_streak: i64 = 0;
+    if let Some(&last) = dates.last() {
+        if last == today || today.pred_opt() == Some(last) {
+            let set: std::collections::HashSet<NaiveDate> = dates.iter().copied().collect();
+            let mut cursor = last;
+            while set.contains(&cursor) {
+                current_streak += 1;
+                cursor = match cursor.pred_opt() {
+                    Some(p) => p,
+                    None => break,
+                };
+            }
+        }
+    }
+
+    Ok(AchievementStats {
+        total,
+        max_daily: max_daily.unwrap_or(0),
+        max_streak,
+        current_streak,
+    })
+}
+
+/// 已解锁成就：id → 解锁时间
+pub fn unlocked_map(
+    conn: &Connection,
+) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    let mut stmt = conn.prepare("SELECT id, unlocked_at FROM achievements")?;
+    let map: std::collections::HashMap<String, String> = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(map)
+}
+
+/// 记录一条解锁（幂等：INSERT OR IGNORE）
+pub fn insert_unlock(conn: &Connection, id: &str) -> anyhow::Result<String> {
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    conn.execute(
+        "INSERT OR IGNORE INTO achievements (id, unlocked_at) VALUES (?1, ?2)",
+        params![id, now],
+    )?;
+    Ok(now)
 }
 
 /// 删除单条日程

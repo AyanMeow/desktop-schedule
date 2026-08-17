@@ -7,6 +7,7 @@ import type {
   Encouragement,
   AppConfig,
   Weather,
+  AchievementOverview,
 } from './types';
 
 export const api = {
@@ -43,6 +44,10 @@ export const api = {
   listEncouragements: () =>
     invoke<Encouragement[]>('list_encouragements'),
 
+  // 成就
+  achievementOverview: () =>
+    invoke<AchievementOverview>('achievement_overview'),
+
   // 配置
   getConfig: () => invoke<AppConfig>('get_config'),
   saveConfig: (cfg: AppConfig) => invoke<void>('save_config', { cfg }),
@@ -50,6 +55,8 @@ export const api = {
   // 窗口
   showWindow: (label: string) => invoke<void>('show_window', { label }),
   isAutostartFlag: () => invoke<boolean>('is_autostart_flag'),
+  markMainReady: () => invoke<void>('mark_main_ready'),
+  isMainReady: () => invoke<boolean>('is_main_ready'),
   toggleLock: () => invoke<boolean>('toggle_lock'),
   toggleAlwaysOnTop: () => invoke<boolean>('toggle_always_on_top'),
   setAutostart: (enabled: boolean) => invoke<boolean>('set_autostart', { enabled }),

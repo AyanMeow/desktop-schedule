@@ -8,11 +8,14 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 import { useScheduleStore } from './stores/schedules';
 import { useConfigStore } from './stores/config';
 import { useWeatherStore } from './stores/weather';
+import { useAchievementsStore } from './stores/achievements';
 import CalendarGrid from './components/CalendarGrid.vue';
 import DayPanel from './components/DayPanel.vue';
 import AddScheduleModal from './components/AddScheduleModal.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
 import EncouragementToast from './components/EncouragementToast.vue';
+import AchievementToast from './components/AchievementToast.vue';
+import AchievementPanel from './components/AchievementPanel.vue';
 import WeatherBadge from './components/WeatherBadge.vue';
 import Icon from './components/Icon.vue';
 import { getPalette, getDdlScale } from './themes';
@@ -21,6 +24,7 @@ import { toISO } from './utils/date';
 const scheduleStore = useScheduleStore();
 const configStore = useConfigStore();
 const weatherStore = useWeatherStore();
+const achievementsStore = useAchievementsStore();
 
 // 是否为控制面板窗口（taskbar 窗口 url 带 #panel）
 const isPanel = computed(() => window.location.hash === '#panel');
@@ -28,6 +32,7 @@ const isPanel = computed(() => window.location.hash === '#panel');
 const locked = ref(false);
 const expandedDate = ref<string | null>(null);
 const showAdd = ref(false);
+const showAchievements = ref(false);
 const showSettings = ref(false);
 const showMenu = ref(false);
 const menuLocked = ref(false);
@@ -138,8 +143,18 @@ function onAdded(dateISO: string) {
   expandedDate.value = dateISO;
 }
 
+// 贴片未就绪时的提示（启动早期点击面板按钮）
+const notReadyTip = ref('');
+let notReadyTimer: number | undefined;
+function showNotReadyTip() {
+  notReadyTip.value = '贴片正在加载中，请稍候片刻…';
+  if (notReadyTimer) window.clearTimeout(notReadyTimer);
+  notReadyTimer = window.setTimeout(() => { notReadyTip.value = ''; }, 2500);
+}
+
 // ===== 控制面板（taskbar 窗口）方法 =====
 async function panelToggleWidget() {
+  if (!(await api.isMainReady())) { showNotReadyTip(); return; }
   const wins = await getAllWindows();
   const main = wins.find((w) => w.label === 'main');
   if (!main) return;
@@ -148,6 +163,7 @@ async function panelToggleWidget() {
   else { await main.show(); await main.setFocus(); }
 }
 async function panelFocusWidget() {
+  if (!(await api.isMainReady())) { showNotReadyTip(); return; }
   const wins = await getAllWindows();
   const main = wins.find((w) => w.label === 'main');
   if (main) { await main.show(); await main.setFocus(); }
@@ -218,6 +234,8 @@ onMounted(async () => {
     expandedDate.value = toISO(new Date());
   }
   await weatherStore.init();
+  // 成就数据预加载（失败不阻塞启动）
+  void achievementsStore.load();
 
   // 同步开机自启状态：以 config 为准，确保注册表与配置一致
   try {
@@ -245,6 +263,8 @@ onMounted(async () => {
   if (!autostartFlag) {
     await api.showWindow('taskbar');
   }
+  // 标记主贴片已就绪，此后控制面板的"找到/显隐贴片"按钮才允许操作
+  await api.markMainReady();
 });
 
 onUnmounted(() => {
@@ -259,6 +279,7 @@ onUnmounted(() => {
   <div v-if="isPanel" class="panel">
     <h2><Icon name="calendar" :size="20" /> 桌面日程</h2>
     <p class="panel-tip">桌面贴片始终显示，不受此窗口影响</p>
+    <p v-if="notReadyTip" class="panel-tip" style="color:#d97706;">{{ notReadyTip }}</p>
     <button class="panel-btn primary" @click="panelFocusWidget">
       <Icon name="calendar" :size="16" /> 找到桌面贴片
     </button>
@@ -308,6 +329,9 @@ onUnmounted(() => {
         </div>
         <span class="brand"><Icon name="calendar" :size="16" /> 桌面日程</span>
         <WeatherBadge />
+        <button class="icon-btn" @click="showAchievements = true" title="成就">
+          <Icon name="trophy" :size="17" />
+        </button>
         <div class="topbar-actions">
           <button class="icon-btn" @click="toggleLock" :title="menuLocked ? '解除锁定' : '锁定位置'">
             <Icon :name="menuLocked ? 'lock' : 'unlock'" :size="17" />
@@ -341,7 +365,9 @@ onUnmounted(() => {
       @added="onAdded"
     />
     <SettingsPanel v-if="showSettings" @close="showSettings = false" />
+    <AchievementPanel v-if="showAchievements" @close="showAchievements = false" />
     <EncouragementToast />
+    <AchievementToast />
   </div>
 </template>
 

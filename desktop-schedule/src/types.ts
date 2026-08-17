@@ -120,3 +120,33 @@ export interface Weather {
 }
 
 export type ViewRange = 'week' | 'biweek' | 'month';
+
+// ============ 成就系统 ============
+
+export interface AchievementStats {
+  total: number;          // 累计完成条数（每条日程一生只计一次）
+  max_daily: number;      // 单日最大完成条数
+  max_streak: number;     // 历史最长连续天数
+  current_streak: number; // 当前连续天数
+}
+
+export interface AchievementItem {
+  id: string;
+  title: string;
+  desc: string;
+  category: string; // 'cumulative' | 'streak' | 'daily'
+  target: number;
+  progress: number;
+  unlocked: boolean;
+  unlocked_at: string | null;
+}
+
+export interface AchievementOverview {
+  stats: AchievementStats;
+  items: AchievementItem[];
+}
+
+/** achievement-unlocked 事件 payload（Toast 用） */
+export interface AchievementUnlockedPayload {
+  achievements: AchievementItem[];
+}

@@ -1,3 +1,5 @@
+use serde::Serialize;
+use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
@@ -11,6 +13,29 @@ mod weather;
 mod window_state;
 use window_state::{WindowState, WindowStateExt};
 
+// 最小 Win32 FFI 声明（仅为抗"显示桌面"监控用 3 个函数，不引入 windows crate 直接依赖）
+#[allow(non_snake_case)]
+mod win32 {
+    pub type HWND = *mut core::ffi::c_void;
+    extern "system" {
+        pub fn IsIconic(hWnd: HWND) -> i32;
+        pub fn DwmGetWindowAttribute(
+            hwnd: HWND,
+            dwAttribute: u32,
+            pvAttribute: *mut core::ffi::c_void,
+            cbAttribute: u32,
+        ) -> i32;
+        pub fn DwmSetWindowAttribute(
+            hwnd: HWND,
+            dwAttribute: u32,
+            pvAttribute: *const core::ffi::c_void,
+            cbAttribute: u32,
+        ) -> i32;
+    }
+}
+const DWMWA_TRANSITIONS_FORCEDISABLED: u32 = 3;
+const DWMWA_CLOAKED: u32 = 13;
+
 /// 应用状态：数据库连接 + 配置文件路径 + 最近天气缓存
 pub struct AppState {
     pub db: db::Db,
@@ -20,6 +45,9 @@ pub struct AppState {
 
 /// 启动时是否带 --autostart 参数（供前端查询）
 pub struct IsAutostartFlag(pub bool);
+
+/// 主贴片前端是否已完成首次加载（供控制面板查询，避免提前 show 暴露默认界面）
+pub struct MainReady(pub AtomicBool);
 
 // ============ 日程命令 ============
 
@@ -39,6 +67,155 @@ fn list_schedules(state: State<'_, Mutex<AppState>>, start: String, end: String)
     with_db(&state, |c| db::list_schedules_in_range(c, &start, &end))
 }
 
+// ============ 成就系统 ============
+
+/// 成就条件类型
+#[derive(Debug, Clone)]
+enum AchKind {
+    Cumulative(i64), // 累计完成 n 条
+    Streak(i64),     // 最长连续 n 天
+    DailyBurst(i64), // 单日完成 n 条
+}
+
+/// 成就定义（硬编码：新增/调整成就只改这里，老用户升级后自动参与判定）
+struct AchDef {
+    id: &'static str,
+    title: &'static str,
+    desc: &'static str,
+    kind: AchKind,
+}
+
+impl AchDef {
+    fn target(&self) -> i64 {
+        match &self.kind {
+            AchKind::Cumulative(n) | AchKind::Streak(n) | AchKind::DailyBurst(n) => *n,
+        }
+    }
+    fn category(&self) -> &'static str {
+        match &self.kind {
+            AchKind::Cumulative(_) => "cumulative",
+            AchKind::Streak(_) => "streak",
+            AchKind::DailyBurst(_) => "daily",
+        }
+    }
+}
+
+/// 当前统计值对某条件的进度（封顶到目标值）
+fn ach_progress(kind: &AchKind, s: &db::AchievementStats) -> i64 {
+    match kind {
+        AchKind::Cumulative(n) => s.total.min(*n),
+        AchKind::Streak(n) => s.max_streak.min(*n),
+        AchKind::DailyBurst(n) => s.max_daily.min(*n),
+    }
+}
+
+/// 面板单项（前端隐藏成就展示由前端处理，后端返回完整数据）
+#[derive(Debug, Clone, Serialize)]
+struct AchievementItem {
+    id: String,
+    title: String,
+    desc: String,
+    category: String,
+    target: i64,
+    progress: i64,
+    unlocked: bool,
+    unlocked_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AchievementOverview {
+    stats: db::AchievementStats,
+    items: Vec<AchievementItem>,
+}
+
+/// 解锁事件 payload（Toast 用）
+#[derive(Debug, Clone, Serialize)]
+struct AchievementUnlockedPayload {
+    achievements: Vec<AchievementItem>,
+}
+
+/// 全部成就（19 枚，艾露猫风格命名）
+static ACHIEVEMENTS: &[AchDef] = &[
+    // 累计完成（每 50 一档，上限 500）
+    AchDef { id: "c50",  title: "初露锋芒", desc: "累计完成 50 条日程",  kind: AchKind::Cumulative(50) },
+    AchDef { id: "c100", title: "小有名气", desc: "累计完成 100 条日程", kind: AchKind::Cumulative(100) },
+    AchDef { id: "c150", title: "稳定发挥", desc: "累计完成 150 条日程", kind: AchKind::Cumulative(150) },
+    AchDef { id: "c200", title: "部落常客", desc: "累计完成 200 条日程", kind: AchKind::Cumulative(200) },
+    AchDef { id: "c250", title: "资深猎人", desc: "累计完成 250 条日程", kind: AchKind::Cumulative(250) },
+    AchDef { id: "c300", title: "百战沙场", desc: "累计完成 300 条日程", kind: AchKind::Cumulative(300) },
+    AchDef { id: "c350", title: "猎场老将", desc: "累计完成 350 条日程", kind: AchKind::Cumulative(350) },
+    AchDef { id: "c400", title: "传奇猎手", desc: "累计完成 400 条日程", kind: AchKind::Cumulative(400) },
+    AchDef { id: "c450", title: "王牌猎人", desc: "累计完成 450 条日程", kind: AchKind::Cumulative(450) },
+    AchDef { id: "c500", title: "猫车之王", desc: "累计完成 500 条日程", kind: AchKind::Cumulative(500) },
+    // 连续天数
+    AchDef { id: "s3",   title: "连胜起步", desc: "连续 3 天有完成日程",   kind: AchKind::Streak(3) },
+    AchDef { id: "s7",   title: "一周坚持", desc: "连续 7 天有完成日程",   kind: AchKind::Streak(7) },
+    AchDef { id: "s14",  title: "半月不辍", desc: "连续 14 天有完成日程",  kind: AchKind::Streak(14) },
+    AchDef { id: "s30",  title: "月度毅力", desc: "连续 30 天有完成日程",  kind: AchKind::Streak(30) },
+    AchDef { id: "s100", title: "百日铸魂", desc: "连续 100 天有完成日程", kind: AchKind::Streak(100) },
+    // 单日爆发（上限 20）
+    AchDef { id: "d5",   title: "干劲十足", desc: "单日完成 5 条日程",  kind: AchKind::DailyBurst(5) },
+    AchDef { id: "d10",  title: "效率惊人", desc: "单日完成 10 条日程", kind: AchKind::DailyBurst(10) },
+    AchDef { id: "d15",  title: "火力全开", desc: "单日完成 15 条日程", kind: AchKind::DailyBurst(15) },
+    AchDef { id: "d20",  title: "单日传说", desc: "单日完成 20 条日程", kind: AchKind::DailyBurst(20) },
+];
+
+fn ach_item(def: &AchDef, stats: &db::AchievementStats, unlocked_at: Option<String>) -> AchievementItem {
+    let progress = ach_progress(&def.kind, stats);
+    AchievementItem {
+        id: def.id.to_string(),
+        title: def.title.to_string(),
+        desc: def.desc.to_string(),
+        category: def.category().to_string(),
+        target: def.target(),
+        progress,
+        unlocked: unlocked_at.is_some(),
+        unlocked_at,
+    }
+}
+
+/// 成就判定：解锁满足条件且未解锁的成就；notify=true 时广播事件（Toast）
+/// 供 toggle_complete（notify=true）与启动回填（notify=false，老用户静默解锁）共用
+fn check_unlocks(app: &tauri::AppHandle, state: &Mutex<AppState>, notify: bool) {
+    let Ok(st) = state.lock() else { return };
+    let Ok(conn) = st.db.0.lock() else { return };
+    let Ok(stats) = db::achievement_stats(&conn) else { return };
+    let Ok(unlocked) = db::unlocked_map(&conn) else { return };
+
+    let mut newly: Vec<AchievementItem> = vec![];
+    for def in ACHIEVEMENTS {
+        if unlocked.contains_key(def.id) {
+            continue;
+        }
+        if ach_progress(&def.kind, &stats) >= def.target() {
+            if let Ok(at) = db::insert_unlock(&conn, def.id) {
+                newly.push(ach_item(def, &stats, Some(at)));
+            }
+        }
+    }
+    if notify && !newly.is_empty() {
+        let _ = app.emit(
+            "achievement-unlocked",
+            AchievementUnlockedPayload { achievements: newly },
+        );
+    }
+}
+
+#[tauri::command]
+fn achievement_overview(
+    state: State<'_, Mutex<AppState>>,
+) -> Result<AchievementOverview, String> {
+    with_db(&state, |c| {
+        let stats = db::achievement_stats(c)?;
+        let unlocked = db::unlocked_map(c)?;
+        let items = ACHIEVEMENTS
+            .iter()
+            .map(|d| ach_item(d, &stats, unlocked.get(d.id).cloned()))
+            .collect();
+        Ok(AchievementOverview { stats, items })
+    })
+}
+
 #[tauri::command]
 fn create_schedule(state: State<'_, Mutex<AppState>>, input: db::NewSchedule) -> Result<Vec<i64>, String> {
     with_db(&state, |c| db::create_schedules(c, &input))
@@ -55,6 +232,8 @@ fn toggle_complete(
     if became_completed {
         let enc = with_db(&state, |c| db::random_encouragement(c))?;
         let _ = app.emit("encouragement", enc);
+        // 成就判定：新解锁的成就广播 achievement-unlocked 事件
+        check_unlocks(&app, &state, true);
     }
     Ok(schedule)
 }
@@ -186,6 +365,18 @@ fn show_window(app: tauri::AppHandle, label: String) -> Result<(), String> {
 #[tauri::command]
 fn is_autostart_flag(flag: State<'_, IsAutostartFlag>) -> bool {
     flag.0
+}
+
+/// 主贴片前端完成首次加载后调用，标记就绪
+#[tauri::command]
+fn mark_main_ready(flag: State<'_, MainReady>) {
+    flag.0.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// 查询主贴片前端是否已完成首次加载
+#[tauri::command]
+fn is_main_ready(flag: State<'_, MainReady>) -> bool {
+    flag.0.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 // ============ 窗口命令（沿用 M0） ============
@@ -330,6 +521,12 @@ pub fn run() {
                 last_weather: None,
             }));
 
+            // 成就回填：老用户按历史完成记录静默解锁已满足的成就（不弹通知）
+            {
+                let st = app.state::<Mutex<AppState>>();
+                check_unlocks(app.handle(), &st, false);
+            }
+
             // 启动天气定时刷新（每 30 分钟）
             weather::start_refresh_loop(app.handle().clone());
 
@@ -338,6 +535,54 @@ pub fn run() {
             // 自启参数存在 AppState 供前端查询
             let is_autostart = std::env::args().any(|a| a == "--autostart");
             app.manage(IsAutostartFlag(is_autostart));
+            app.manage(MainReady(AtomicBool::new(false)));
+
+            // 抗"显示桌面"：Win+D / Win+M / 任务栏显示桌面按钮会把贴片 DWM 隐藏（cloak）
+            // 或最小化。先禁用该窗口动画，再用 300ms 轮询检测并立即恢复。
+            // 注意只检测 cloak/最小化，不检测 IsWindowVisible——托盘"隐藏贴片"用的
+            // 是 hide()（可见性=false），不触发 cloak，因此不会跟用户主动隐藏打架。
+            if let Some(main_win) = app.get_webview_window("main") {
+                if let Ok(hwnd) = main_win.hwnd() {
+                    unsafe {
+                        let yes: i32 = 1;
+                        let _ = win32::DwmSetWindowAttribute(
+                            hwnd.0 as win32::HWND,
+                            DWMWA_TRANSITIONS_FORCEDISABLED,
+                            &yes as *const i32 as *const core::ffi::c_void,
+                            4,
+                        );
+                    }
+                }
+            }
+            let monitor_handle = app.handle().clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                let Some(win) = monitor_handle.get_webview_window("main") else {
+                    continue;
+                };
+                let Ok(hwnd) = win.hwnd() else { continue };
+                if !win.is_visible().unwrap_or(false) {
+                    continue; // 用户主动隐藏，不干预
+                }
+                unsafe {
+                    let mut cloaked: u32 = 0;
+                    let hr = win32::DwmGetWindowAttribute(
+                        hwnd.0 as win32::HWND,
+                        DWMWA_CLOAKED,
+                        &mut cloaked as *mut u32 as *mut core::ffi::c_void,
+                        4,
+                    );
+                    let iconic = win32::IsIconic(hwnd.0 as win32::HWND) != 0;
+                    if iconic || (hr == 0 && cloaked != 0) {
+                        if iconic {
+                            let _ = win.unminimize();
+                        }
+                        // cloak 状态无法被 show() 直接解除，hide+show 强制 DWM 重算可见性
+                        let _ = win.hide();
+                        let _ = win.show();
+                    }
+                }
+            });
 
             // 托盘菜单
             let panel = MenuItem::with_id(app, "panel", "控制面板", true, None::<&str>)?;
@@ -422,12 +667,15 @@ pub fn run() {
             export_schedules,
             import_schedules,
             list_encouragements,
+            achievement_overview,
             // 配置
             get_config,
             save_config,
             // 窗口
             show_window,
             is_autostart_flag,
+            mark_main_ready,
+            is_main_ready,
             toggle_lock,
             set_opacity,
             toggle_always_on_top,

@@ -31,3 +31,6 @@ Thumbs.db
 *.db-journal
 *.db-wal
 *.db-shm
+
+# ===== AI 会话目录（本机专用）=====
+.zcode/
