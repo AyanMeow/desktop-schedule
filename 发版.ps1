@@ -48,9 +48,9 @@ if (Test-Path $tokenPath) {
   if (-not $rel -or -not $rel.id) {
     Write-Output "Gitee Release 创建失败：$($createJson | Out-String)"
   } else {
-    # 上传 exe 附件
+    # 上传 exe 附件（注意：Gitee 字段名是单数 file，文档写的 files 实际无效）
     $attachJson = & curl.exe -s --noproxy '*' -X POST "$api/releases/$($rel.id)/attach_files" `
-      -F "access_token=$gtoken" -F "files=@$exe" 2>$null
+      -F "access_token=$gtoken" -F "file=@$exe" 2>$null
     $att = $null
     try { $att = @($attachJson | ConvertFrom-Json) } catch {}
     if ($att -and $att[0].browser_download_url) {
