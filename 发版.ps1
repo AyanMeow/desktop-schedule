@@ -1,4 +1,4 @@
-# 发版辅助：从更新公告提取本版段落 + 计算 SHA-256 + 创建 GitHub Release
+﻿# 发版辅助：从更新公告提取本版段落 + 计算 SHA-256 + 创建 GitHub Release
 param([Parameter(Mandatory)][string]$Ver)
 $ErrorActionPreference = 'Stop'
 
