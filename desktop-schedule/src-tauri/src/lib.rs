@@ -155,10 +155,17 @@ struct WhatsNew {
 }
 
 /// 从 CHANGELOG 提取 "## vX.Y.Z" 到下一个 "---" 之间的段落
+/// 标题行实际带日期后缀（如 "## v0.1.3（2026-08-17）"），须用前缀匹配；
+/// 同时排除 v0.1.3 误配 v0.1.30 的情况
 fn extract_changelog_section(text: &str, version: &str) -> Option<String> {
     let header = format!("## v{version}");
     let lines: Vec<&str> = text.lines().collect();
-    let start = lines.iter().position(|l| l.trim() == header)?;
+    let start = lines.iter().position(|l| {
+        let t = l.trim();
+        t == header
+            || (t.starts_with(&header)
+                && !t[header.len()..].starts_with(|c: char| c.is_ascii_digit()))
+    })?;
     let end = lines[start + 1..]
         .iter()
         .position(|l| l.trim() == "---")
@@ -183,6 +190,23 @@ fn get_whats_new(state: State<'_, Mutex<AppState>>) -> Result<Option<WhatsNew>, 
     }
     Ok(extract_changelog_section(CHANGELOG, &cur)
         .map(|notes| WhatsNew { version: cur, notes }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_changelog_section;
+
+    /// 标题行带日期后缀（真实格式），且不能把 v0.1.3 误配到 v0.1.30
+    #[test]
+    fn extracts_section_with_date_suffix() {
+        let md = "# 公告\n\n---\n\n## v0.1.3（2026-08-17）\n\n### 修复\n内容A\n\n---\n\n## v0.1.30（2026-08-17）\n\n内容B\n\n---\n";
+        let s = extract_changelog_section(md, "0.1.3").unwrap();
+        assert!(s.contains("内容A"), "应命中 0.1.3 段落：{s}");
+        assert!(!s.contains("内容B"), "不应越界到 0.1.30 段落：{s}");
+        // 查 0.1.30 时能命中自己的段落
+        let s2 = extract_changelog_section(md, "0.1.30").unwrap();
+        assert!(s2.contains("内容B"));
+    }
 }
 
 /// 用户已读公告，记录当前版本号（不再重复弹出）
