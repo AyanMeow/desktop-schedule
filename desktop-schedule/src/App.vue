@@ -22,6 +22,7 @@ import WeatherBadge from './components/WeatherBadge.vue';
 import Icon from './components/Icon.vue';
 import { getPalette, getDdlScale } from './themes';
 import { toISO } from './utils/date';
+import type { WhatsNew } from './types';
 
 const scheduleStore = useScheduleStore();
 const configStore = useConfigStore();
@@ -36,6 +37,12 @@ const locked = ref(false);
 const expandedDate = ref<string | null>(null);
 const showAdd = ref(false);
 const showAchievements = ref(false);
+// 更新公告（仅控制面板窗口使用）
+const whatsNew = ref<WhatsNew | null>(null);
+async function dismissWhatsNew() {
+  whatsNew.value = null;
+  await api.markVersionSeen().catch(() => { /* 忽略，下次还会提示 */ });
+}
 const showSettings = ref(false);
 const showMenu = ref(false);
 const menuLocked = ref(false);
@@ -214,6 +221,8 @@ onMounted(async () => {
     if (!autostartFlag) {
       await api.showWindow('taskbar');
     }
+    // 更新后首次打开：有未读的版本公告则浮层展示
+    whatsNew.value = await api.getWhatsNew().catch(() => null);
     return;
   }
   await configStore.load();
@@ -284,6 +293,14 @@ onUnmounted(() => {
   <div v-if="isPanel" class="panel">
     <h2><Icon name="calendar" :size="20" /> 桌面日程</h2>
     <p class="panel-tip">桌面贴片始终显示，不受此窗口影响</p>
+
+    <!-- 更新公告浮层：更新后首次打开时展示 -->
+    <div v-if="whatsNew" class="whatsnew">
+      <h3>✨ 已更新到 v{{ whatsNew.version }}</h3>
+      <div class="whatsnew-notes">{{ whatsNew.notes }}</div>
+      <button class="whatsnew-btn" @click="dismissWhatsNew">知道了</button>
+    </div>
+
     <p v-if="notReadyTip" class="panel-tip" style="color:#d97706;">{{ notReadyTip }}</p>
     <button class="panel-btn primary" @click="panelFocusWidget">
       <Icon name="calendar" :size="16" /> 找到桌面贴片
@@ -541,6 +558,47 @@ html, body, #app {
   opacity: 0.55;
   text-align: center;
 }
+/* 更新公告浮层：覆盖整个控制面板窗口 */
+.whatsnew {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: #fbfbfd;
+  padding: 14px 12px 10px;
+  display: flex;
+  flex-direction: column;
+}
+.whatsnew h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #1a1a2e;
+}
+.whatsnew-notes {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: none;
+  white-space: pre-wrap;
+  font-size: 11px;
+  line-height: 1.55;
+  color: #444;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+}
+.whatsnew-notes::-webkit-scrollbar { display: none; }
+.whatsnew-btn {
+  margin-top: 8px;
+  padding: 7px 0;
+  border: none;
+  border-radius: 8px;
+  background: #4a6cf7;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+.whatsnew-btn:hover { filter: brightness(1.08); }
+
 .panel-btn {
   width: 100%;
   padding: 12px;

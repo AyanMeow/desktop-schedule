@@ -13,7 +13,8 @@ echo.
 set /p CONFIRM=确认发版？ (y=继续):
 if /i not "%CONFIRM%"=="y" goto :cancelled
 
-echo [1/5] 构建 release ...
+echo [1/5] 同步 CHANGELOG（公告嵌入 exe）并构建 release ...
+copy /y 更新公告.md desktop-schedule\src-tauri\CHANGELOG.md >nul
 cd desktop-schedule
 call npx tauri build --no-bundle
 if errorlevel 1 goto :fail

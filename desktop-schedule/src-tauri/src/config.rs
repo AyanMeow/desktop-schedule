@@ -104,13 +104,15 @@ pub struct WeatherConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateConfig {
     #[serde(default = "default_auto_check")]
-    pub auto_check: bool,     // 每日自动检查
+    pub auto_check: bool,          // 每日自动检查
     #[serde(default = "default_proxy_mode")]
-    pub proxy_mode: String,   // "auto" | "manual" | "direct"
+    pub proxy_mode: String,        // "auto" | "manual" | "direct"
     #[serde(default)]
-    pub proxy: String,        // manual 模式下的代理地址（如 http://127.0.0.1:7899）
+    pub proxy: String,             // manual 模式下的代理地址（如 http://127.0.0.1:7899）
     #[serde(default)]
-    pub last_check: String,   // 上次检查时间（ISO），防频繁重启重复查
+    pub last_check: String,        // 上次检查时间（ISO），防频繁重启重复查
+    #[serde(default)]
+    pub last_seen_version: String, // 用户已查看过公告的版本；与当前不一致时控制面板显示更新公告
 }
 
 impl Default for UpdateConfig {
@@ -120,6 +122,7 @@ impl Default for UpdateConfig {
             proxy_mode: "auto".into(),
             proxy: String::new(),
             last_check: String::new(),
+            last_seen_version: String::new(),
         }
     }
 }

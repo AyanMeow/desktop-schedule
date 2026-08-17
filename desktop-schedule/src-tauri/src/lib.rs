@@ -135,6 +135,57 @@ fn get_app_version() -> String {
     update::current_version()
 }
 
+// ============ 更新公告（控制面板展示） ============
+
+/// 发版时由 发版.bat 从根目录「更新公告.md」复制而来，随 exe 编译嵌入
+const CHANGELOG: &str = include_str!("../CHANGELOG.md");
+
+#[derive(Debug, Clone, Serialize)]
+struct WhatsNew {
+    version: String,
+    notes: String,
+}
+
+/// 从 CHANGELOG 提取 "## vX.Y.Z" 到下一个 "---" 之间的段落
+fn extract_changelog_section(text: &str, version: &str) -> Option<String> {
+    let header = format!("## v{version}");
+    let lines: Vec<&str> = text.lines().collect();
+    let start = lines.iter().position(|l| l.trim() == header)?;
+    let end = lines[start + 1..]
+        .iter()
+        .position(|l| l.trim() == "---")
+        .map(|i| start + 1 + i)
+        .unwrap_or(lines.len());
+    let section = lines[start + 1..end].join("\n").trim().to_string();
+    if section.is_empty() {
+        None
+    } else {
+        Some(section)
+    }
+}
+
+/// 当前版本有未查看的更新公告时返回内容（供控制面板启动时调用）
+#[tauri::command]
+fn get_whats_new(state: State<'_, Mutex<AppState>>) -> Result<Option<WhatsNew>, String> {
+    let st = state.lock().map_err(|e| e.to_string())?;
+    let cfg = config::load(&st.config_path).map_err(|e| e.to_string())?;
+    let cur = update::current_version();
+    if cfg.update.last_seen_version == cur {
+        return Ok(None);
+    }
+    Ok(extract_changelog_section(CHANGELOG, &cur)
+        .map(|notes| WhatsNew { version: cur, notes }))
+}
+
+/// 用户已读公告，记录当前版本号（不再重复弹出）
+#[tauri::command]
+fn mark_version_seen(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+    let st = state.lock().map_err(|e| e.to_string())?;
+    let mut cfg = config::load(&st.config_path).map_err(|e| e.to_string())?;
+    cfg.update.last_seen_version = update::current_version();
+    config::save(&st.config_path, &cfg).map_err(|e| e.to_string())
+}
+
 // ============ 成就系统 ============
 
 /// 成就条件类型
@@ -746,6 +797,8 @@ pub fn run() {
             apply_update,
             detect_update_proxy,
             get_app_version,
+            get_whats_new,
+            mark_version_seen,
             // 配置
             get_config,
             save_config,

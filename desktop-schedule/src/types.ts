@@ -106,6 +106,7 @@ export interface UpdateConfig {
   proxy_mode: string; // 'auto' | 'manual' | 'direct'
   proxy: string;      // manual 模式的代理地址
   last_check: string; // 上次检查时间
+  last_seen_version: string; // 已读公告的版本
 }
 
 // ============ 自动更新 ============
@@ -123,6 +124,12 @@ export interface UpdateProgress {
   downloaded: number;
   total: number;
   percent: number;
+}
+
+/** 更新公告（控制面板展示） */
+export interface WhatsNew {
+  version: string;
+  notes: string;
 }
 
 export interface DailyWeather {
