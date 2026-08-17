@@ -52,6 +52,7 @@ export interface AppConfig {
   ddl_colors: DdlColors;
   encouragement: EncouragementConfig;
   weather: WeatherConfig;
+  update: UpdateConfig;
 }
 
 export interface WindowConfig {
@@ -98,6 +99,30 @@ export interface WeatherConfig {
   city: string;
   latitude: number;
   longitude: number;
+}
+
+export interface UpdateConfig {
+  auto_check: boolean;
+  proxy_mode: string; // 'auto' | 'manual' | 'direct'
+  proxy: string;      // manual 模式的代理地址
+  last_check: string; // 上次检查时间
+}
+
+// ============ 自动更新 ============
+
+export interface UpdateInfo {
+  has_update: boolean;
+  current: string;
+  latest: string;
+  notes: string;
+  asset_url: string;
+  asset_size: number;
+}
+
+export interface UpdateProgress {
+  downloaded: number;
+  total: number;
+  percent: number;
 }
 
 export interface DailyWeather {

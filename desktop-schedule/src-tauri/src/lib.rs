@@ -9,6 +9,7 @@ use tauri::{
 
 mod config;
 mod db;
+mod update;
 mod weather;
 mod window_state;
 use window_state::{WindowState, WindowStateExt};
@@ -65,6 +66,73 @@ where
 #[tauri::command]
 fn list_schedules(state: State<'_, Mutex<AppState>>, start: String, end: String) -> Result<Vec<db::Schedule>, String> {
     with_db(&state, |c| db::list_schedules_in_range(c, &start, &end))
+}
+
+// ============ 自动更新命令 ============
+
+/// 把阻塞网络/文件操作丢到专用线程池，避免卡住异步运行时
+async fn run_blocking<T, F>(f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> anyhow::Result<T> + Send + 'static,
+{
+    match tauri::async_runtime::spawn_blocking(f).await {
+        Ok(r) => r.map_err(|e| e.to_string()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+async fn check_update(state: State<'_, Mutex<AppState>>) -> Result<update::UpdateInfo, String> {
+    let (mode, manual) = {
+        let st = state.lock().map_err(|e| e.to_string())?;
+        let cfg = config::load(&st.config_path).map_err(|e| e.to_string())?;
+        (cfg.update.proxy_mode, cfg.update.proxy)
+    };
+    run_blocking(move || {
+        update::check_with_retry(&mode, &manual, 3, std::time::Duration::from_secs(5))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn download_update(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
+    let (mode, manual, dir) = {
+        let st = state.lock().map_err(|e| e.to_string())?;
+        let cfg = config::load(&st.config_path).map_err(|e| e.to_string())?;
+        let dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("updates");
+        (cfg.update.proxy_mode, cfg.update.proxy, dir)
+    };
+    run_blocking(move || update::check_and_download(&app, &mode, &manual, &dir).map(|_| ())).await
+}
+
+#[tauri::command]
+async fn apply_update(app: tauri::AppHandle) -> Result<(), String> {
+    let exe = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("updates")
+        .join("desktop-schedule.exe");
+    run_blocking(move || update::apply_update(&app, &exe)).await
+}
+
+/// 手动探测本地代理（设置面板「检测代理」按钮）
+#[tauri::command]
+async fn detect_update_proxy() -> Result<Option<String>, String> {
+    run_blocking(|| Ok(update::detect_proxy())).await
+}
+
+#[tauri::command]
+fn get_app_version() -> String {
+    update::current_version()
 }
 
 // ============ 成就系统 ============
@@ -530,6 +598,10 @@ pub fn run() {
             // 启动天气定时刷新（每 30 分钟）
             weather::start_refresh_loop(app.handle().clone());
 
+            // 自动更新：清理换壳残留 + 每日检查循环
+            update::cleanup_leftovers();
+            update::start_check_loop(app.handle().clone());
+
             // 窗口可见性：不在 Rust 端 show，由前端加载完成后调 show_window 命令
             // 这样用户看到的是加载完毕的正确界面，无默认值闪烁
             // 自启参数存在 AppState 供前端查询
@@ -668,6 +740,12 @@ pub fn run() {
             import_schedules,
             list_encouragements,
             achievement_overview,
+            // 自动更新
+            check_update,
+            download_update,
+            apply_update,
+            detect_update_proxy,
+            get_app_version,
             // 配置
             get_config,
             save_config,

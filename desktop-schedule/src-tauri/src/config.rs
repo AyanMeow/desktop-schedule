@@ -17,6 +17,8 @@ pub struct AppConfig {
     pub encouragement: EncouragementConfig,
     #[serde(default)]
     pub weather: WeatherConfig,
+    #[serde(default)]
+    pub update: UpdateConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,6 +101,29 @@ pub struct WeatherConfig {
     pub longitude: f64,    // 经度
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateConfig {
+    #[serde(default = "default_auto_check")]
+    pub auto_check: bool,     // 每日自动检查
+    #[serde(default = "default_proxy_mode")]
+    pub proxy_mode: String,   // "auto" | "manual" | "direct"
+    #[serde(default)]
+    pub proxy: String,        // manual 模式下的代理地址（如 http://127.0.0.1:7899）
+    #[serde(default)]
+    pub last_check: String,   // 上次检查时间（ISO），防频繁重启重复查
+}
+
+impl Default for UpdateConfig {
+    fn default() -> Self {
+        Self {
+            auto_check: true,
+            proxy_mode: "auto".into(),
+            proxy: String::new(),
+            last_check: String::new(),
+        }
+    }
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -108,6 +133,7 @@ impl Default for AppConfig {
             ddl_colors: DdlColors::default(),
             encouragement: EncouragementConfig::default(),
             weather: WeatherConfig::default(),
+            update: UpdateConfig::default(),
         }
     }
 }
@@ -197,6 +223,8 @@ fn default_range() -> String { "week".into() }
 fn default_week_start() -> String { "monday".into() }
 fn default_delay() -> u64 { 5 }
 fn default_undo_window() -> u64 { 5 }
+fn default_auto_check() -> bool { true }
+fn default_proxy_mode() -> String { "auto".into() }
 fn default_c_overdue() -> String { "#c0392b".into() }
 fn default_c_le1() -> String { "#e74c3c".into() }
 fn default_c_le3() -> String { "#e67e22".into() }

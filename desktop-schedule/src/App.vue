@@ -9,6 +9,7 @@ import { useScheduleStore } from './stores/schedules';
 import { useConfigStore } from './stores/config';
 import { useWeatherStore } from './stores/weather';
 import { useAchievementsStore } from './stores/achievements';
+import { useUpdateStore } from './stores/update';
 import CalendarGrid from './components/CalendarGrid.vue';
 import DayPanel from './components/DayPanel.vue';
 import AddScheduleModal from './components/AddScheduleModal.vue';
@@ -16,6 +17,7 @@ import SettingsPanel from './components/SettingsPanel.vue';
 import EncouragementToast from './components/EncouragementToast.vue';
 import AchievementToast from './components/AchievementToast.vue';
 import AchievementPanel from './components/AchievementPanel.vue';
+import UpdateBar from './components/UpdateBar.vue';
 import WeatherBadge from './components/WeatherBadge.vue';
 import Icon from './components/Icon.vue';
 import { getPalette, getDdlScale } from './themes';
@@ -25,6 +27,7 @@ const scheduleStore = useScheduleStore();
 const configStore = useConfigStore();
 const weatherStore = useWeatherStore();
 const achievementsStore = useAchievementsStore();
+const updateStore = useUpdateStore();
 
 // 是否为控制面板窗口（taskbar 窗口 url 带 #panel）
 const isPanel = computed(() => window.location.hash === '#panel');
@@ -236,6 +239,8 @@ onMounted(async () => {
   await weatherStore.init();
   // 成就数据预加载（失败不阻塞启动）
   void achievementsStore.load();
+  // 挂载后台更新事件（available/progress/ready）
+  void updateStore.init();
 
   // 同步开机自启状态：以 config 为准，确保注册表与配置一致
   try {
@@ -368,6 +373,7 @@ onUnmounted(() => {
     <AchievementPanel v-if="showAchievements" @close="showAchievements = false" />
     <EncouragementToast />
     <AchievementToast />
+    <UpdateBar />
   </div>
 </template>
 

@@ -8,6 +8,7 @@ import type {
   AppConfig,
   Weather,
   AchievementOverview,
+  UpdateInfo,
 } from './types';
 
 export const api = {
@@ -47,6 +48,13 @@ export const api = {
   // 成就
   achievementOverview: () =>
     invoke<AchievementOverview>('achievement_overview'),
+
+  // 自动更新
+  checkUpdate: () => invoke<UpdateInfo>('check_update'),
+  downloadUpdate: () => invoke<void>('download_update'),
+  applyUpdate: () => invoke<void>('apply_update'),
+  detectUpdateProxy: () => invoke<string | null>('detect_update_proxy'),
+  getAppVersion: () => invoke<string>('get_app_version'),
 
   // 配置
   getConfig: () => invoke<AppConfig>('get_config'),

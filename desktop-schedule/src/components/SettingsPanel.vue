@@ -2,15 +2,23 @@
 import { ref, onMounted, computed } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useConfigStore } from '../stores/config';
+import { useUpdateStore } from '../stores/update';
 import { api } from '../api';
 import Icon from './Icon.vue';
 import { PALETTES } from '../themes';
 
 const configStore = useConfigStore();
+const updateStore = useUpdateStore();
 const emit = defineEmits<{ close: [] }>();
 
 const autostart = ref(false);
 const alwaysOnTop = ref(false);
+const version = ref('');
+const detectMsg = ref('');
+
+onMounted(async () => {
+  version.value = await api.getAppVersion();
+});
 
 type Theme = 'dark' | 'light' | 'image';
 const theme = computed<Theme>(() => {
@@ -145,6 +153,25 @@ async function pickImage() {
     await save();
   }
 }
+
+// ===== 更新设置 =====
+async function onAutoCheck(e: Event) {
+  configStore.config.update.auto_check = (e.target as HTMLInputElement).checked;
+  await save();
+}
+async function onProxyMode(e: Event) {
+  configStore.config.update.proxy_mode = (e.target as HTMLSelectElement).value;
+  await save();
+}
+async function onProxyInput(e: Event) {
+  configStore.config.update.proxy = (e.target as HTMLInputElement).value.trim();
+  await save();
+}
+async function onDetectProxy() {
+  detectMsg.value = '检测中…';
+  const r = await api.detectUpdateProxy().catch(() => null);
+  detectMsg.value = r ? `检测到 ${r}` : '未检测到可用代理（将直连）';
+}
 </script>
 
 <template>
@@ -243,6 +270,51 @@ async function pickImage() {
           <span><Icon name="settings" :size="13" /> 开机自启</span>
           <input type="checkbox" :checked="autostart" @change="(e) => onAutostart((e.target as HTMLInputElement).checked)" />
         </label>
+      </section>
+
+      <section class="group">
+        <h4><Icon name="cloud" :size="14" /> 版本与更新</h4>
+        <p class="tip">当前版本 v{{ version }}</p>
+        <div class="data-row">
+          <button class="data-btn" @click="updateStore.manualCheck()"
+            :disabled="updateStore.checking || updateStore.downloading">
+            <Icon name="cloud" :size="14" />
+            {{ updateStore.checking ? '检查中…' : '检查更新' }}
+          </button>
+          <button v-if="updateStore.ready" class="data-btn" @click="updateStore.restart()">
+            <Icon name="check" :size="14" /> 立即重启
+          </button>
+        </div>
+        <p class="data-tip" v-if="updateStore.downloading && updateStore.progress">
+          下载中 {{ updateStore.progress.percent }}%
+        </p>
+        <p class="data-tip" v-else-if="updateStore.info && !updateStore.info.has_update">
+          已是最新版本
+        </p>
+        <p class="data-tip" v-else-if="updateStore.error" style="color: var(--danger, #c0392b)">
+          {{ updateStore.error }}
+        </p>
+        <label class="line">
+          <span>每日自动检查</span>
+          <input type="checkbox" :checked="configStore.config.update.auto_check" @change="onAutoCheck" />
+        </label>
+        <label class="line">
+          <span>代理</span>
+          <select :value="configStore.config.update.proxy_mode" @change="onProxyMode">
+            <option value="auto">自动检测</option>
+            <option value="manual">手动</option>
+            <option value="direct">直连</option>
+          </select>
+        </label>
+        <label class="line" v-if="configStore.config.update.proxy_mode === 'manual'">
+          <span>地址</span>
+          <input type="text" class="proxy-input" :value="configStore.config.update.proxy"
+            @change="onProxyInput" placeholder="http://127.0.0.1:7899" />
+        </label>
+        <div class="data-row" v-if="configStore.config.update.proxy_mode === 'auto'">
+          <button class="data-btn" @click="onDetectProxy">检测代理</button>
+          <span class="data-tip" v-if="detectMsg">{{ detectMsg }}</span>
+        </div>
       </section>
 
       <section class="group">
