@@ -38,27 +38,37 @@ $tokenPath = Join-Path $PSScriptRoot '.gitee-token'
 if (Test-Path $tokenPath) {
   $gtoken = (Get-Content $tokenPath -Raw).Trim()
   $api = 'https://gitee.com/api/v5/repos/ayanmeow/desktop-schedule'
-  # 创建 Release（tag 不存在时按 main 创建）
-  $createJson = & curl.exe -s --noproxy '*' -X POST "$api/releases" `
-    -d "access_token=$gtoken" -d "tag_name=v$Ver" -d "name=v$Ver" `
-    -d "target_commitish=main" `
-    --data-urlencode "body@$tmp" 2>$null
+  $notesText = Get-Content $tmp -Raw
+
+  # 创建 Release（tag 不存在时按 main 创建）；重复执行时按 tag 取现有 Release（幂等）
   $rel = $null
-  try { $rel = $createJson | ConvertFrom-Json } catch {}
-  if (-not $rel -or -not $rel.id) {
-    Write-Output "Gitee Release 创建失败：$($createJson | Out-String)"
-  } else {
-    # 上传 exe 附件（注意：Gitee 字段名是单数 file，文档写的 files 实际无效）
-    $attachJson = & curl.exe -s --noproxy '*' -X POST "$api/releases/$($rel.id)/attach_files" `
-      -F "access_token=$gtoken" -F "file=@$exe" 2>$null
-    $att = $null
-    try { $att = @($attachJson | ConvertFrom-Json) } catch {}
-    if ($att -and $att[0].browser_download_url) {
-      Write-Output "Gitee Release v$Ver 创建成功（附件已上传）"
-    } else {
-      Write-Output "Gitee 附件上传异常：$($attachJson | Out-String)"
-    }
+  try {
+    $rel = Invoke-RestMethod -Method Post -Uri "$api/releases" -Body @{
+      access_token = $gtoken; tag_name = "v$Ver"; name = "v$Ver"
+      target_commitish = 'main'; body = $notesText
+    } -TimeoutSec 60
+    Write-Output "Gitee Release v$Ver 已创建"
+  } catch {
+    try {
+      $rel = Invoke-RestMethod -Method Get -Uri "$api/releases/tags/v$Ver`?access_token=$gtoken" -TimeoutSec 30
+      Write-Output "Gitee Release v$Ver 已存在（幂等复用）"
+    } catch { $rel = $null }
   }
+  if (-not $rel -or -not $rel.id) { throw "Gitee Release 创建与查询均失败" }
+
+  # 附件已存在则跳过上传（完全幂等）
+  $existing = Invoke-RestMethod -Method Get -Uri "$api/releases/tags/v$Ver`?access_token=$gtoken" -TimeoutSec 30
+  $hasExe = @($existing.assets | Where-Object { $_.name -eq 'desktop-schedule.exe' }).Count -gt 0
+  if (-not $hasExe) {
+    # 上传 exe 附件（注意：Gitee 字段名是单数 file，文档写的 files 实际无效）
+    $null = & curl.exe -s --noproxy '*' -X POST "$api/releases/$($rel.id)/attach_files" `
+      -F "access_token=$gtoken" -F "file=@$exe" 2>$null
+    # 验证附件确实存在，缺失视为发版失败（throw 中断，让问题当场暴露）
+    $verify = Invoke-RestMethod -Method Get -Uri "$api/releases/tags/v$Ver`?access_token=$gtoken" -TimeoutSec 30
+    $hasExe = @($verify.assets | Where-Object { $_.name -eq 'desktop-schedule.exe' }).Count -gt 0
+    if (-not $hasExe) { throw "Gitee 附件上传失败：Release 中缺少 desktop-schedule.exe" }
+  }
+  Write-Output "Gitee Release v$Ver 就绪（附件已确认）"
 } else {
   Write-Output "未找到 .gitee-token，跳过 Gitee 发布"
 }

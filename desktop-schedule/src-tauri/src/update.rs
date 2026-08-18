@@ -222,7 +222,8 @@ fn check_source(mode: &str, manual: &str, source: &str) -> Result<UpdateInfo> {
     })
 }
 
-/// 按配置的更新源检查：auto = 双源各查一次取版本较新者（一源失败用另一源）
+/// 按配置的更新源检查：auto = 双源各查一次取版本较新者（一源失败用另一源）。
+/// 版本相同时优先选**带附件**的源——防止某源 Release 建了但附件缺失导致拿不到下载地址。
 pub fn check_once(mode: &str, manual: &str, source_cfg: &str) -> Result<UpdateInfo> {
     match source_cfg {
         "gitee" => check_source(mode, manual, "gitee"),
@@ -234,8 +235,12 @@ pub fn check_once(mode: &str, manual: &str, source_cfg: &str) -> Result<UpdateIn
             (Ok(g), Ok(h)) => {
                 if newer(&h.latest, &g.latest) {
                     Ok(h)
-                } else {
+                } else if newer(&g.latest, &h.latest) {
                     Ok(g)
+                } else if !g.asset_url.is_empty() || h.asset_url.is_empty() {
+                    Ok(g) // 同版本：gitee 有附件优先，否则 github
+                } else {
+                    Ok(h)
                 }
             }
             (Ok(g), Err(_)) => Ok(g),
