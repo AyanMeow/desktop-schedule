@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { useScheduleStore } from '../stores/schedules';
 import { api } from '../api';
-import { ddlStatus } from '../utils/date';
+import { ddlStatus, isToday } from '../utils/date';
 import Icon from './Icon.vue';
 import type { Schedule } from '../types';
 
@@ -84,7 +84,8 @@ async function doDeleteAll() {
         </span>
       </div>
       <div class="meta">
-        <span v-if="schedule.has_ddl && !schedule.completed" class="ddl" :class="'ddl-lv-' + ddl.level">
+        <!-- 倒计时按今天计算，仅在查看当日日程时显示，避免其他日期下产生误解 -->
+        <span v-if="schedule.has_ddl && !schedule.completed && isToday(schedule.date)" class="ddl" :class="'ddl-lv-' + ddl.level">
           <Icon name="flag" :size="11" /> {{ ddl.label }}
         </span>
         <span v-if="schedule.priority >= 1" class="pri-icon" :style="{ color: priorityColor }">
