@@ -7,7 +7,7 @@ import Icon from './Icon.vue';
 import type { Schedule } from '../types';
 
 const props = defineProps<{ schedule: Schedule }>();
-const emit = defineEmits<{ deleted: [] }>();
+const emit = defineEmits<{ deleted: []; edit: [schedule: Schedule] }>();
 
 const scheduleStore = useScheduleStore();
 
@@ -113,7 +113,10 @@ async function doDeleteAll() {
       </div>
     </div>
 
-    <button class="del" @click="onRemove" title="删除" v-if="!confirming">
+    <button class="del" @click="emit('edit', schedule)" title="编辑" v-if="!confirming">
+      <Icon name="note" :size="14" />
+    </button>
+    <button class="del danger" @click="onRemove" title="删除" v-if="!confirming">
       <Icon name="trash" :size="14" />
     </button>
   </div>
@@ -200,5 +203,6 @@ async function doDeleteAll() {
   width: 1.3em; height: 1.3em; border-radius: 5px;
   display: flex; align-items: center; justify-content: center;
 }
-.del:hover { opacity: 1; color: var(--danger); background: var(--accent-soft); }
+.del:hover { opacity: 1; color: var(--accent); background: var(--accent-soft); }
+.del.danger:hover { color: var(--danger); }
 </style>

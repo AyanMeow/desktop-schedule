@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { ref, computed } from 'vue';
 import { useScheduleStore } from '../stores/schedules';
 import ScheduleItem from './ScheduleItem.vue';
+import EditScheduleModal from './EditScheduleModal.vue';
 import Icon from './Icon.vue';
 import { isToday, parseISO } from '../utils/date';
 import type { Schedule } from '../types';
@@ -9,6 +10,9 @@ import type { Schedule } from '../types';
 const props = defineProps<{ dateISO: string }>();
 const emit = defineEmits<{ add: [] }>();
 const scheduleStore = useScheduleStore();
+
+// 正在编辑的日程（弹窗状态）
+const editing = ref<Schedule | null>(null);
 
 const items = computed<Schedule[]>(() => {
   const list = scheduleStore.byDate.get(props.dateISO) || [];
@@ -37,7 +41,12 @@ const dayLabel = computed(() => {
       </button>
     </div>
     <div class="list">
-      <ScheduleItem v-for="s in items" :key="s.id" :schedule="s" />
+      <ScheduleItem
+        v-for="s in items"
+        :key="s.id"
+        :schedule="s"
+        @edit="editing = $event"
+      />
       <div v-if="items.length === 0" class="empty">
         <span>这一天还没有日程</span>
         <button class="add-link" @click="emit('add')">
@@ -45,6 +54,14 @@ const dayLabel = computed(() => {
         </button>
       </div>
     </div>
+
+    <!-- 编辑日程弹窗 -->
+    <EditScheduleModal
+      v-if="editing"
+      :schedule="editing"
+      @close="editing = null"
+      @saved="editing = null"
+    />
   </div>
 </template>
 
