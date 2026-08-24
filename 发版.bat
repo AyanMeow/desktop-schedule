@@ -23,9 +23,20 @@ cd ..
 echo [2/5] 重新生成 README（简介 + 更新公告）...
 copy /b readme-intro.md + 更新公告.md README.md >nul
 
-echo [3/5] 提交并推送 GitHub + Gitee（走 Clash 代理）...
+echo [3/5] 提交并推送 GitHub + Gitee ...
 git add -A
 git commit -m "release: v%VER%"
+rem 探测 Clash 代理是否真实可用（僵而不死时端口通但转发失败）
+set HTTP_PROXY=
+set HTTPS_PROXY=
+curl -s --max-time 6 -o nul -x http://127.0.0.1:7899 https://api.github.com/zen
+if not errorlevel 1 (
+  set HTTP_PROXY=http://127.0.0.1:7899
+  set HTTPS_PROXY=http://127.0.0.1:7899
+  echo 网络：走 Clash 代理
+) else (
+  echo 网络：Clash 不可用，直连
+)
 git push
 if errorlevel 1 goto :fail
 git push gitee main

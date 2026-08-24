@@ -2,9 +2,32 @@
 param([Parameter(Mandatory)][string]$Ver)
 $ErrorActionPreference = 'Stop'
 
-# Clash 代理（本机 GitHub 访问必需；Gitee 走直连）
-$env:HTTP_PROXY = 'http://127.0.0.1:7899'
-$env:HTTPS_PROXY = 'http://127.0.0.1:7899'
+# 代理：先测 TCP 端口，再发真实请求验证转发可用（Clash 可能僵而不死）；
+# 任一失败则直连
+$proxyOk = $false
+if (Test-NetConnection -ComputerName 127.0.0.1 -Port 7899 -InformationLevel Quiet -WarningAction SilentlyContinue) {
+  try {
+    $probe = New-Object System.Net.WebProxy('http://127.0.0.1:7899')
+    $req = [System.Net.HttpWebRequest]::Create('https://api.github.com/zen')
+    $req.Proxy = $probe
+    $req.Timeout = 8000
+    $req.Method = 'HEAD'
+    $null = $req.GetResponse()
+    $proxyOk = $true
+  } catch {
+    # 部分错误码（如 403 限流）说明转发本身是通的
+    if ($_.Exception.Response) { $proxyOk = $true } else { $proxyOk = $false }
+  }
+}
+if ($proxyOk) {
+  $env:HTTP_PROXY = 'http://127.0.0.1:7899'
+  $env:HTTPS_PROXY = 'http://127.0.0.1:7899'
+  Write-Output '网络：走 Clash 代理 (7899)'
+} else {
+  $env:HTTP_PROXY = $null
+  $env:HTTPS_PROXY = $null
+  Write-Output '网络：Clash 不可用，使用直连'
+}
 $gh = 'C:\Program Files\GitHub CLI\gh.exe'
 
 # 1) 提取更新公告中 "## vX.Y.Z" 到下一个 "---" 的段落
