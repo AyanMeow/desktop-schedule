@@ -33,6 +33,23 @@ const updateStore = useUpdateStore();
 // 是否为控制面板窗口（taskbar 窗口 url 带 #panel）
 const isPanel = computed(() => window.location.hash === '#panel');
 
+// 更新按钮（顶栏原品牌位）：有新版且未在下载/未就绪时显示
+const canStartUpdate = computed(
+  () =>
+    !!updateStore.info?.has_update &&
+    !updateStore.downloading &&
+    !updateStore.ready
+);
+// 悬停公告：过滤掉 notes 末尾的 SHA256 校验行
+const updateNotes = computed(() => {
+  const n = updateStore.info?.notes || '';
+  return n
+    .split('\n')
+    .filter((l) => !l.trim().startsWith('SHA256:'))
+    .join('\n')
+    .trim();
+});
+
 const locked = ref(false);
 const expandedDate = ref<string | null>(null);
 const showAdd = ref(false);
@@ -345,7 +362,18 @@ onUnmounted(() => {
             </button>
           </div>
         </div>
-        <span class="brand"><Icon name="calendar" :size="16" /> 桌面日程</span>
+        <!-- 原"桌面日程"位置：有新版本时显示绿色更新按钮（悬停看公告，点击开始更新） -->
+        <div class="brand-slot">
+          <div v-if="canStartUpdate" class="upd-tip-wrap">
+            <button class="update-pill" @click="updateStore.startDownload()">
+              <Icon name="download" :size="13" /> 更新
+            </button>
+            <div class="upd-tip">
+              <div class="upd-tip-head">v{{ updateStore.info?.latest }} 更新内容</div>
+              <div class="upd-tip-body">{{ updateNotes }}</div>
+            </div>
+          </div>
+        </div>
         <WeatherBadge />
         <button class="icon-btn" @click="showAchievements = true" title="成就">
           <Icon name="trophy" :size="17" />
@@ -457,15 +485,71 @@ html, body, #app {
   flex-shrink: 0;
 }
 .topbar:active { cursor: grabbing; }
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3em;
-  font-size: 1em;
-  font-weight: 600;
+.brand-slot {
   flex: 1;
   margin-left: 0.3em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+/* 绿色更新按钮 + 悬停公告 */
+.upd-tip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.update-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #22c55e;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 3px 14px;
+  font-size: 0.82em;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 2px 10px rgba(34, 197, 94, 0.4);
+}
+.update-pill:hover { filter: brightness(1.1); }
+.upd-tip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(340px, 70vw);
+  background: var(--modal-bg, #232634);
+  color: var(--app-fg, #e8eaf2);
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+  z-index: 250;
+}
+.upd-tip-wrap:hover .upd-tip {
+  opacity: 1;
+  pointer-events: auto;
+}
+.upd-tip-head {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--accent, #22c55e);
+  margin-bottom: 5px;
+}
+.upd-tip-body {
+  font-size: 0.78em;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  color: var(--app-fg-soft, #9aa0b4);
+}
+.upd-tip-body::-webkit-scrollbar { display: none; }
 .menu-wrap { position: relative; }
 .topbar-actions { display: flex; align-items: center; gap: 0.2em; }
 .icon-btn.active { background: rgba(108,140,255,0.3); color: #6c8cff; }
