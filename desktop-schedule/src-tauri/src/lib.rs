@@ -143,6 +143,31 @@ fn get_app_version() -> String {
     update::current_version()
 }
 
+/// 追加诊断日志到 app_data_dir/app.log（滚动截断，防无限增长）
+#[tauri::command]
+fn append_log(app: tauri::AppHandle, msg: String) {
+    let Ok(dir) = app.path().app_data_dir() else { return };
+    let path = dir.join("app.log");
+    let line = format!(
+        "[{}] {}\n",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        msg
+    );
+    // 超 200KB 时保留后半段
+    if let Ok(meta) = std::fs::metadata(&path) {
+        if meta.len() > 200_000 {
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                let keep: String = text.chars().skip(text.len() / 2).collect();
+                let _ = std::fs::write(&path, keep);
+            }
+        }
+    }
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
 // ============ 更新公告（控制面板展示） ============
 
 /// 发版时由 发版.bat 从根目录「更新公告.md」复制而来，随 exe 编译嵌入
@@ -829,6 +854,7 @@ pub fn run() {
             apply_update,
             detect_update_proxy,
             get_app_version,
+            append_log,
             get_whats_new,
             mark_version_seen,
             // 配置

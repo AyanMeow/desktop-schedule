@@ -227,7 +227,10 @@ async function saveGeometry() {
     configStore.config.window.width = Math.round(size.width / sf);
     configStore.config.window.height = Math.round(size.height / sf);
     await configStore.save();
-  } catch { /* 忽略 */ }
+  } catch (e) {
+    // 不再静默：几何保存失败记入日志（%APPDATA%\app.log）
+    void api.appendLog(`窗口几何保存失败：${String(e)}`);
+  }
 }
 function debounceSaveGeometry() {
   if (geomTimer) window.clearTimeout(geomTimer);
@@ -245,13 +248,41 @@ onMounted(async () => {
   }
   await configStore.load();
 
-  // 恢复窗口几何（位置/大小）
+  // 恢复窗口几何（位置/大小）：set 后回读校验，不一致重试一次，仍失败记日志
   const win = getCurrentWindow();
   const w = configStore.config.window;
+  const applyGeom = () => {
+    void win.setPosition(new LogicalPosition(w.x, w.y));
+    void win.setSize(new LogicalSize(w.width, w.height));
+  };
   try {
-    await win.setPosition(new LogicalPosition(w.x, w.y));
-    await win.setSize(new LogicalSize(w.width, w.height));
-  } catch { /* 忽略 */ }
+    applyGeom();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await new Promise((r) => setTimeout(r, 120)); // 等 WM 操作生效
+      const pos = await win.outerPosition();
+      const size = await win.outerSize();
+      const sf = await win.scaleFactor();
+      const gx = Math.round(pos.x / sf);
+      const gy = Math.round(pos.y / sf);
+      const gw = Math.round(size.width / sf);
+      const gh = Math.round(size.height / sf);
+      const ok =
+        Math.abs(gx - w.x) <= 1 &&
+        Math.abs(gy - w.y) <= 1 &&
+        Math.abs(gw - w.width) <= 1 &&
+        Math.abs(gh - w.height) <= 1;
+      if (ok) break;
+      if (attempt === 0) {
+        applyGeom(); // 重试一次
+      } else {
+        void api.appendLog(
+          `窗口几何恢复失败：期望(${w.x},${w.y},${w.width}x${w.height}) 实际(${gx},${gy},${gw}x${gh})`
+        );
+      }
+    }
+  } catch (e) {
+    void api.appendLog(`窗口几何恢复异常：${String(e)}`);
+  }
 
   // 先从 config 恢复视图设置，再 refresh（否则 refresh 用默认范围查询，日程不显示）
   locked.value = configStore.config.window.locked;

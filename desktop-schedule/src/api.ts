@@ -56,6 +56,7 @@ export const api = {
   applyUpdate: () => invoke<void>('apply_update'),
   detectUpdateProxy: () => invoke<string | null>('detect_update_proxy'),
   getAppVersion: () => invoke<string>('get_app_version'),
+  appendLog: (msg: string) => invoke<void>('append_log', { msg }),
   getWhatsNew: () => invoke<WhatsNew | null>('get_whats_new'),
   markVersionSeen: () => invoke<void>('mark_version_seen'),
 
