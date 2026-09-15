@@ -871,6 +871,48 @@ pub fn run() {
             set_autostart,
             is_autostart_enabled
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // 退出兜底：托盘退出/正常退出时保存主贴片当前几何
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                save_geometry_on_exit(app);
+            }
+        });
+}
+
+/// 退出时保存主贴片几何（护栏：最小化态/恰好默认几何不落盘，防污染配置）
+fn save_geometry_on_exit(app: &tauri::AppHandle) {
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    let (Ok(pos), Ok(size)) = (win.outer_position(), win.outer_size()) else {
+        return;
+    };
+    if pos.x < -10000 || pos.y < -10000 {
+        return; // 最小化态（Windows 报 -32000 附近）
+    }
+    let sf = win.scale_factor().unwrap_or(1.0);
+    if sf <= 0.0 {
+        return;
+    }
+    let x = (pos.x as f64 / sf).round() as i32;
+    let y = (pos.y as f64 / sf).round() as i32;
+    let w = (size.width as f64 / sf).round() as u32;
+    let h = (size.height as f64 / sf).round() as u32;
+    // 护栏：恰好等于默认几何（100,100,900x675）不写——几乎不可能是用户意图
+    if x == 100 && y == 100 && w == 900 && h == 675 {
+        return;
+    }
+    let state = app.state::<Mutex<AppState>>();
+    let Ok(st) = state.lock() else {
+        return;
+    };
+    if let Ok(mut cfg) = config::load(&st.config_path) {
+        cfg.window.x = x;
+        cfg.window.y = y;
+        cfg.window.width = w;
+        cfg.window.height = h;
+        let _ = config::save(&st.config_path, &cfg);
+    }
 }

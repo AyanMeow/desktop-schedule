@@ -29,7 +29,9 @@ export const useConfigStore = defineStore('config', () => {
   async function load() {
     try {
       config.value = await api.getConfig();
-    } catch {
+    } catch (e) {
+      // 不再静默回退：记日志留痕（app.log），下次启动可查
+      void api.appendLog(`配置加载失败，已回退默认值：${String(e)}`);
       config.value = JSON.parse(JSON.stringify(defaultConfig));
     }
     loaded.value = true;

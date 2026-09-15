@@ -222,10 +222,22 @@ async function saveGeometry() {
     const size = await win.outerSize();
     // 转换物理像素→逻辑像素（除以缩放因子）
     const sf = await win.scaleFactor();
-    configStore.config.window.x = Math.round(pos.x / sf);
-    configStore.config.window.y = Math.round(pos.y / sf);
-    configStore.config.window.width = Math.round(size.width / sf);
-    configStore.config.window.height = Math.round(size.height / sf);
+    const gx = Math.round(pos.x / sf);
+    const gy = Math.round(pos.y / sf);
+    const gw = Math.round(size.width / sf);
+    const gh = Math.round(size.height / sf);
+    // 护栏1：最小化态（-32000 附近）不写
+    if (gx < -10000 || gy < -10000) return;
+    // 护栏2：恰好默认几何（100,100,900x675）不写——默认态几乎不可能是用户意图，
+    // 宁可保留旧值也不污染配置；记录日志便于追踪是谁把窗口弄回默认的
+    if (gx === 100 && gy === 100 && gw === 900 && gh === 675) {
+      void api.appendLog('几何护栏：窗口处于默认几何，跳过写盘');
+      return;
+    }
+    configStore.config.window.x = gx;
+    configStore.config.window.y = gy;
+    configStore.config.window.width = gw;
+    configStore.config.window.height = gh;
     await configStore.save();
   } catch (e) {
     // 不再静默：几何保存失败记入日志（%APPDATA%\app.log）
@@ -248,15 +260,17 @@ onMounted(async () => {
   }
   await configStore.load();
 
-  // 恢复窗口几何（位置/大小）：set 后回读校验，不一致重试一次，仍失败记日志
+  // 恢复窗口几何（位置/大小）：完整 await（不留吞错死角），set 后回读校验，
+  // 不一致重试一次，无论成败都记一行启动日志（下次失忆即有完整现场）
   const win = getCurrentWindow();
   const w = configStore.config.window;
-  const applyGeom = () => {
-    void win.setPosition(new LogicalPosition(w.x, w.y));
-    void win.setSize(new LogicalSize(w.width, w.height));
+  const applyGeom = async () => {
+    await win.setPosition(new LogicalPosition(w.x, w.y));
+    await win.setSize(new LogicalSize(w.width, w.height));
   };
   try {
-    applyGeom();
+    await applyGeom();
+    let lastRead = { x: 0, y: 0, w: 0, h: 0, sf: 1 };
     for (let attempt = 0; attempt < 2; attempt++) {
       await new Promise((r) => setTimeout(r, 120)); // 等 WM 操作生效
       const pos = await win.outerPosition();
@@ -266,6 +280,7 @@ onMounted(async () => {
       const gy = Math.round(pos.y / sf);
       const gw = Math.round(size.width / sf);
       const gh = Math.round(size.height / sf);
+      lastRead = { x: gx, y: gy, w: gw, h: gh, sf };
       const ok =
         Math.abs(gx - w.x) <= 1 &&
         Math.abs(gy - w.y) <= 1 &&
@@ -273,13 +288,16 @@ onMounted(async () => {
         Math.abs(gh - w.height) <= 1;
       if (ok) break;
       if (attempt === 0) {
-        applyGeom(); // 重试一次
+        await applyGeom(); // 重试一次
       } else {
         void api.appendLog(
           `窗口几何恢复失败：期望(${w.x},${w.y},${w.width}x${w.height}) 实际(${gx},${gy},${gw}x${gh})`
         );
       }
     }
+    void api.appendLog(
+      `[boot] 配置 window=${w.x},${w.y},${w.width}x${w.height} theme=${configStore.config.window.theme_name} → 实际(${lastRead.x},${lastRead.y},${lastRead.w}x${lastRead.h}) sf=${lastRead.sf}`
+    );
   } catch (e) {
     void api.appendLog(`窗口几何恢复异常：${String(e)}`);
   }
