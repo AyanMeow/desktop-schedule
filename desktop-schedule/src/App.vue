@@ -18,6 +18,7 @@ import EncouragementToast from './components/EncouragementToast.vue';
 import AchievementToast from './components/AchievementToast.vue';
 import AchievementPanel from './components/AchievementPanel.vue';
 import UpdateBar from './components/UpdateBar.vue';
+import MemoWidget from './components/MemoWidget.vue';
 import WeatherBadge from './components/WeatherBadge.vue';
 import Icon from './components/Icon.vue';
 import { getPalette, getDdlScale } from './themes';
@@ -32,6 +33,8 @@ const updateStore = useUpdateStore();
 
 // 是否为控制面板窗口（taskbar 窗口 url 带 #panel）
 const isPanel = computed(() => window.location.hash === '#panel');
+// 是否为临时待办便签窗口（memo 窗口 url 带 #memo）
+const isMemo = computed(() => window.location.hash === '#memo');
 
 // 更新按钮（顶栏原品牌位）：有新版且未在下载/未就绪时显示
 const canStartUpdate = computed(
@@ -183,6 +186,18 @@ function showNotReadyTip() {
 }
 
 // ===== 控制面板（taskbar 窗口）方法 =====
+// 临时待办：顶栏按钮收起/唤起（数据保留，倒计时继续）
+async function toggleMemo() {
+  const wins = await getAllWindows();
+  const memo = wins.find((w) => w.label === 'memo');
+  if (!memo) return;
+  if (await memo.isVisible()) {
+    await memo.hide();
+  } else {
+    await memo.show();
+    await memo.setFocus();
+  }
+}
 async function panelToggleWidget() {
   if (!(await api.isMainReady())) { showNotReadyTip(); return; }
   const wins = await getAllWindows();
@@ -258,6 +273,8 @@ onMounted(async () => {
     }
     return;
   }
+  // 临时待办便签：按需显示（顶栏按钮触发），无数据加载
+  if (isMemo.value) return;
   await configStore.load();
 
   // 恢复窗口几何（位置/大小）：完整 await（不留吞错死角），set 后回读校验，
@@ -358,8 +375,11 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- 临时待办便签窗口（memo） -->
+  <MemoWidget v-if="isMemo" />
+
   <!-- 控制面板窗口（taskbar） -->
-  <div v-if="isPanel" class="panel">
+  <div v-else-if="isPanel" class="panel">
     <h2><Icon name="calendar" :size="20" /> 桌面日程</h2>
     <p class="panel-tip">桌面贴片始终显示，不受此窗口影响</p>
 
@@ -411,6 +431,10 @@ onUnmounted(() => {
             </button>
           </div>
         </div>
+        <!-- 临时待办：菜单按钮右侧，收起/唤起便签 -->
+        <button class="icon-btn" @click="toggleMemo" title="临时待办">
+          <Icon name="note" :size="17" />
+        </button>
         <!-- 原"桌面日程"位置：有新版本时显示绿色更新按钮（悬停看公告，点击开始更新） -->
         <div class="brand-slot">
           <div v-if="canStartUpdate" class="upd-tip-wrap">

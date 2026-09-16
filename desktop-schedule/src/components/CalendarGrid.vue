@@ -13,6 +13,12 @@ const weatherStore = useWeatherStore();
 const props = defineProps<{ expandedDate: string | null }>();
 const emit = defineEmits<{ 'update:expandedDate': [string | null] }>();
 
+// 「今天」：日历范围居中到今天 + 日程面板同步展开今天
+function onGoToday() {
+  scheduleStore.goToday();
+  emit('update:expandedDate', toISO(new Date()));
+}
+
 // ddl 圆点颜色：从 CSS 变量取（由主题驱动）
 const ddlColorVar: Record<string, string> = {
   overdue: 'var(--ddl-overdue)',
@@ -114,7 +120,7 @@ const gridDays = computed(() => {
       >
         {{ r === 'week' ? '周' : r === 'biweek' ? '双周' : '月' }}
       </button>
-      <button class="today-btn" @click="scheduleStore.goToday()">今天</button>
+      <button class="today-btn" @click="onGoToday">今天</button>
     </div>
 
     <!-- 星期表头 -->
