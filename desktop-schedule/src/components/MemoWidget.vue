@@ -10,21 +10,55 @@ interface MemoLine {
   text: string;
   done: boolean;
   end: number | null; // 倒计时截止 epoch ms
+  // 单行样式（未设置时用 BASE_* 默认值）
+  size?: number;
+  bold?: boolean;
+  color?: string;
 }
+
+const BASE_SIZE = 15;
+const BASE_COLOR = '#1a1a1a';
+const COLORS = ['#1a1a1a', '#d0342c', '#2563eb', '#16a34a', '#ca8a04'];
 
 const win = getCurrentWindow();
 const lines = ref<MemoLine[]>([]);
 const input = ref('');
 let nextId = 1;
 
-// 便签级样式
-const fontSize = ref(15);
-const bold = ref(false);
-const color = ref('#1a1a1a');
-const COLORS = ['#1a1a1a', '#d0342c', '#2563eb', '#16a34a', '#ca8a04'];
-
-// 活动行（倒计时的设置目标）：点击行选中
+// 活动行（倒计时与样式工具栏的作用目标）：点击行选中
 const activeId = ref<number | null>(null);
+const activeLine = computed(() => lines.value.find((x) => x.id === activeId.value) || null);
+
+// 工具栏在未选中行时的轻提示
+const styleHint = ref(false);
+let styleHintTimer: number | undefined;
+function hintNoSelection() {
+  styleHint.value = true;
+  if (styleHintTimer) window.clearTimeout(styleHintTimer);
+  styleHintTimer = window.setTimeout(() => (styleHint.value = false), 1500);
+}
+
+function lineStyle(l: MemoLine) {
+  return {
+    fontSize: (l.size ?? BASE_SIZE) + 'px',
+    fontWeight: l.bold ? '700' : '400',
+    color: l.color ?? BASE_COLOR,
+  };
+}
+
+// ---- 单行样式操作：作用于选中行 ----
+function adjSize(delta: number) {
+  if (!activeLine.value) { hintNoSelection(); return; }
+  activeLine.value.size = Math.min(28, Math.max(12, (activeLine.value.size ?? BASE_SIZE) + delta));
+}
+function toggleBold() {
+  if (!activeLine.value) { hintNoSelection(); return; }
+  activeLine.value.bold = !activeLine.value.bold;
+}
+function pickColor(c: string) {
+  if (!activeLine.value) { hintNoSelection(); return; }
+  activeLine.value.color = c;
+}
 const showTimerPicker = ref(false);
 const customMinutes = ref('');
 
@@ -32,12 +66,6 @@ const customMinutes = ref('');
 const expiredText = ref<string | null>(null);
 // 确认关闭
 const confirming = ref(false);
-
-const noteStyle = computed(() => ({
-  fontSize: fontSize.value + 'px',
-  fontWeight: bold.value ? '700' : '400',
-  color: color.value,
-}));
 
 // ---- 倒计时：有活动倒计时才跑表（1s），到时强制弹出 + 提醒 ----
 const now = ref(Date.now());
@@ -188,13 +216,14 @@ async function doClose() {
       ⏰ 到时：{{ expiredText }}
     </div>
 
-    <!-- 清单 -->
-    <div class="memo-body" :style="noteStyle">
+    <!-- 清单（基础字号/颜色在 .memo-body 上，每行可独立覆盖） -->
+    <div class="memo-body">
       <div
         v-for="l in lines"
         :key="l.id"
         class="line"
         :class="{ done: l.done, active: l.id === activeId }"
+        :style="lineStyle(l)"
         @click="activeId = l.id"
       >
         <button class="check" :class="{ on: l.done }" @click.stop="toggleLine(l)" title="勾选完成">
@@ -218,20 +247,21 @@ async function doClose() {
       />
     </div>
 
-    <!-- 右下工具栏：仅五组 -->
+    <!-- 右下工具栏：仅五组（字号/加粗/颜色作用于选中行，倒计时同） -->
     <div class="toolbar" @mousedown.stop>
-      <button class="tb" @click="fontSize = Math.max(12, fontSize - 2)" title="减小字号">A−</button>
-      <button class="tb" @click="fontSize = Math.min(28, fontSize + 2)" title="增大字号">A+</button>
-      <button class="tb" :class="{ on: bold }" @click="bold = !bold" title="加粗">B</button>
+      <span v-if="styleHint" class="style-hint">先点击选择一行</span>
+      <button class="tb" @click="adjSize(-2)" title="减小选中行字号">A−</button>
+      <button class="tb" @click="adjSize(2)" title="增大选中行字号">A+</button>
+      <button class="tb" :class="{ on: activeLine?.bold }" @click="toggleBold" title="加粗选中行">B</button>
       <div class="colors">
         <button
           v-for="c in COLORS"
           :key="c"
           class="dot"
-          :class="{ sel: color === c }"
+          :class="{ sel: activeId != null && (activeLine?.color ?? BASE_COLOR) === c }"
           :style="{ background: c }"
-          @click="color = c"
-          :title="'文字颜色 ' + c"
+          @click="pickColor(c)"
+          :title="'选中行文字颜色 ' + c"
         ></button>
       </div>
       <div class="timer-wrap">
@@ -315,6 +345,8 @@ async function doClose() {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  font-size: 15px;   /* 基础字号，行可独立覆盖 */
+  color: #1a1a1a;    /* 基础颜色，行可独立覆盖 */
 }
 .line {
   display: flex;
@@ -384,6 +416,12 @@ async function doClose() {
   padding: 6px 8px;
   border-top: 1px solid rgba(0, 0, 0, 0.08);
   position: relative;
+}
+.style-hint {
+  font-size: 11px;
+  color: #b45309;
+  margin-right: 4px;
+  white-space: nowrap;
 }
 .tb {
   border: 1px solid rgba(0, 0, 0, 0.15);

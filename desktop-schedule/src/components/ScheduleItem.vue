@@ -16,6 +16,14 @@ const confirming = ref(false); // 删除多天确认态
 
 const ddl = computed(() => ddlStatus(props.schedule.ddl_at));
 
+// 非今天的日程：显示绝对截止时间（如 截止 09-27 14:00）。
+// 不用相对倒计时——"还剩几天"按今天算对非当天日程有误导（v0.1.x 已定此口径）。
+const ddlAbsolute = computed(() => {
+  const [d, t] = (props.schedule.ddl_at || '').split(' ');
+  const short = (d || '').slice(5); // 'YYYY-MM-DD' → 'MM-DD'
+  return t ? `截止 ${short} ${t}` : `截止 ${short}`;
+});
+
 const priorityColor = computed(() => {
   switch (props.schedule.priority) {
     case 2: return 'var(--danger)';
@@ -84,9 +92,13 @@ async function doDeleteAll() {
         </span>
       </div>
       <div class="meta">
-        <!-- 倒计时按今天计算，仅在查看当日日程时显示，避免其他日期下产生误解 -->
-        <span v-if="schedule.has_ddl && !schedule.completed && isToday(schedule.date)" class="ddl" :class="'ddl-lv-' + ddl.level">
-          <Icon name="flag" :size="11" /> {{ ddl.label }}
+        <!-- 今天：相对倒计时（彩色分级）；其它日期：绝对截止时间（中性色） -->
+        <span
+          v-if="schedule.has_ddl && !schedule.completed"
+          class="ddl"
+          :class="isToday(schedule.date) ? 'ddl-lv-' + ddl.level : 'ddl-abs'"
+        >
+          <Icon name="flag" :size="11" /> {{ isToday(schedule.date) ? ddl.label : ddlAbsolute }}
         </span>
         <span v-if="schedule.priority >= 1" class="pri-icon" :style="{ color: priorityColor }">
           <Icon name="star" :size="11" />
@@ -163,6 +175,7 @@ async function doDeleteAll() {
 .ddl-lv-le3 { color: var(--ddl-le3); }
 .ddl-lv-le7 { color: var(--ddl-le7); }
 .ddl-lv-gt7 { color: var(--ddl-gt7); opacity: 0.8; }
+.ddl-abs { opacity: 0.75; }
 .pri-icon { display: inline-flex; }
 .attach-btn {
   display: inline-flex; align-items: center; gap: 0.2em;
