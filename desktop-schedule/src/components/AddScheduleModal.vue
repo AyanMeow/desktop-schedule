@@ -16,7 +16,9 @@ const emit = defineEmits<{ close: []; added: [dateISO: string] }>();
 const title = ref('');
 const startDate = ref(props.presetDate || today());
 const endDate = ref(props.presetDate || today());
-const sameAsStart = ref(true);
+const mode = ref<'single' | 'multi'>('single');
+const repeat = ref<'daily' | 'interval'>('daily');
+const intervalDays = ref(2);
 const timeOfDay = ref('');
 const hasTime = ref(false);
 const note = ref('');
@@ -32,13 +34,58 @@ watch(() => props.presetDate, (v) => {
   if (v) { startDate.value = v; endDate.value = v; }
 });
 
-// ddl 取实际结束日期：单日模式取 startDate，跨天模式取 endDate
-const ddlDate = computed(() => sameAsStart.value ? startDate.value : endDate.value);
+// 切到多天时若结束早于开始，先把结束拉齐到开始
+watch(mode, (m) => {
+  if (m === 'multi' && new Date(endDate.value) < new Date(startDate.value)) {
+    endDate.value = startDate.value;
+  }
+});
+
+function setIntervalDays(v: number | null) {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return;
+  intervalDays.value = Math.min(30, Math.max(2, n));
+}
 
 const dayCount = computed(() => {
   const s = new Date(startDate.value);
-  const e = new Date(sameAsStart.value ? startDate.value : endDate.value);
+  const e = new Date(endDate.value);
   return Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
+});
+
+// 间隔模式下实际出现的日期列表（含首尾判断）
+const occurrenceDays = computed(() => {
+  if (mode.value !== 'multi' || repeat.value !== 'interval') return [];
+  const e = new Date(endDate.value).getTime();
+  const out: Date[] = [];
+  for (let t = new Date(startDate.value).getTime(); t <= e; t += intervalDays.value * 86400000) {
+    out.push(new Date(t));
+  }
+  return out;
+});
+
+function fmtShort(d: Date): string {
+  const m = `${d.getMonth() + 1}`.padStart(2, '0');
+  const day = `${d.getDate()}`.padStart(2, '0');
+  return `${m}-${day}`;
+}
+
+const fillPreview = computed(() => {
+  if (mode.value !== 'multi') return '';
+  if (repeat.value === 'daily') {
+    return `范围内共 ${dayCount.value} 天，每天都有一条`;
+  }
+  const occ = occurrenceDays.value;
+  if (occ.length === 0) return '';
+  const head = occ.slice(0, 3).map(fmtShort).join('、');
+  const tail = occ.length > 3 ? '…' : '';
+  return `每 ${intervalDays.value} 天一次，共 ${occ.length} 次：${head}${tail}`;
+});
+
+// 截止日期指向：单日=当天，多天每天=结束日期，多天间隔=各次出现当天
+const ddlTargetText = computed(() => {
+  if (mode.value === 'single') return '当天';
+  return repeat.value === 'daily' ? '结束日期' : '各次当天';
 });
 
 const attachmentName = computed(() => {
@@ -60,14 +107,16 @@ function clearAttachment() { attachment.value = null; }
 async function submit() {
   error.value = '';
   if (!title.value.trim()) { error.value = '请填写标题'; return; }
-  const finalEnd = sameAsStart.value ? startDate.value : endDate.value;
-  if (new Date(finalEnd) < new Date(startDate.value)) {
+  if (new Date(endDate.value) < new Date(startDate.value)) {
     error.value = '结束日期不能早于开始日期'; return;
   }
   saving.value = true;
   try {
+    const finalEnd = mode.value === 'single' ? startDate.value : endDate.value;
+    // 间隔模式下 ddl_at 传结束日期占位，后端按各次出现日期替换（时间部分保留）
+    const ddlBase = mode.value === 'single' ? startDate.value : finalEnd;
     const ddlAt = autoDdl.value
-      ? ddlHasTime.value && ddlTime.value ? `${ddlDate.value} ${ddlTime.value}` : ddlDate.value
+      ? ddlHasTime.value && ddlTime.value ? `${ddlBase} ${ddlTime.value}` : ddlBase
       : null;
     const input: NewSchedule = {
       title: title.value.trim(),
@@ -78,6 +127,7 @@ async function submit() {
       priority: priority.value,
       ddl_at: ddlAt,
       attachment: attachment.value,
+      interval_days: mode.value === 'multi' && repeat.value === 'interval' ? intervalDays.value : null,
     };
     await store.create(input);
     emit('added', finalEnd);
@@ -103,63 +153,82 @@ async function submit() {
         <input v-model="title" placeholder="例如：晨跑" @keyup.enter="submit" />
       </label>
 
-      <div class="field">
-        <span class="lab"><Icon name="calendar" :size="13" /> 开始日期</span>
+      <h4 class="sec"><Icon name="calendar" :size="12" /> 日期与重复</h4>
+      <div class="seg">
+        <button type="button" :class="{ sel: mode === 'single' }" @click="mode = 'single'">单日</button>
+        <button type="button" :class="{ sel: mode === 'multi' }" @click="mode = 'multi'">多天</button>
+      </div>
+
+      <div v-if="mode === 'single'" class="field">
+        <span class="lab">日期</span>
         <DatePicker v-model="startDate" />
       </div>
 
-      <div class="field">
-        <label class="inline">
-          <input type="checkbox" v-model="sameAsStart" />
-          仅单日（结束=开始）
-        </label>
-      </div>
+      <template v-else>
+        <div class="grid2">
+          <div class="field">
+            <span class="lab">开始</span>
+            <DatePicker v-model="startDate" />
+          </div>
+          <div class="field">
+            <span class="lab">结束</span>
+            <DatePicker v-model="endDate" />
+          </div>
+        </div>
+        <div class="row">
+          <div class="seg repeat">
+            <button type="button" :class="{ sel: repeat === 'daily' }" @click="repeat = 'daily'">每天</button>
+            <button type="button" :class="{ sel: repeat === 'interval' }" @click="repeat = 'interval'">每隔…天</button>
+          </div>
+          <div class="stepper" v-if="repeat === 'interval'">
+            <button type="button" title="减" @click="setIntervalDays(intervalDays - 1)">−</button>
+            <input
+              type="number" min="2" max="30" :value="intervalDays"
+              @change="(e) => setIntervalDays(+(e.target as HTMLInputElement).value)"
+            />
+            <button type="button" title="加" @click="setIntervalDays(intervalDays + 1)">+</button>
+            <span class="unit">天</span>
+          </div>
+        </div>
+        <p class="preview" v-if="fillPreview">{{ fillPreview }}</p>
+      </template>
 
-      <div class="field" v-if="!sameAsStart">
-        <span class="lab"><Icon name="calendar" :size="13" /> 结束日期</span>
-        <DatePicker v-model="endDate" />
-        <span class="hint" v-if="dayCount > 1">将自动填充范围内的 {{ dayCount }} 天</span>
-      </div>
-
-      <div class="field">
+      <h4 class="sec"><Icon name="star" :size="12" /> 属性</h4>
+      <div class="row">
         <label class="inline">
-          <input type="checkbox" v-model="hasTime" />
+          <input type="checkbox" class="switch" v-model="hasTime" />
           <Icon name="clock" :size="13" /> 每日时段
         </label>
-        <input v-if="hasTime" type="time" v-model="timeOfDay" />
+        <input v-if="hasTime" type="time" v-model="timeOfDay" class="time-input" />
       </div>
-
       <div class="field">
-        <span class="lab"><Icon name="star" :size="13" /> 优先级</span>
-        <select v-model.number="priority">
-          <option :value="0">普通</option>
-          <option :value="1">重要</option>
-          <option :value="2">紧急</option>
-        </select>
+        <span class="lab">优先级</span>
+        <div class="seg prio">
+          <button type="button" class="p0" :class="{ sel: priority === 0 }" @click="priority = 0">普通</button>
+          <button type="button" class="p1" :class="{ sel: priority === 1 }" @click="priority = 1">重要</button>
+          <button type="button" class="p2" :class="{ sel: priority === 2 }" @click="priority = 2">紧急</button>
+        </div>
       </div>
-
-      <div class="field">
+      <div class="row">
         <label class="inline">
-          <input type="checkbox" v-model="autoDdl" />
-          <Icon name="flag" :size="13" /> 设截止 (ddl) = {{ sameAsStart ? '当天' : '结束日期' }}
+          <input type="checkbox" class="switch" v-model="autoDdl" />
+          <Icon name="flag" :size="13" /> 设截止
         </label>
+        <span class="ddl-date" v-if="autoDdl">= {{ ddlTargetText }}</span>
         <template v-if="autoDdl">
-          <span class="ddl-date">{{ ddlDate }}</span>
           <label class="inline">
-            <input type="checkbox" v-model="ddlHasTime" />
+            <input type="checkbox" class="switch" v-model="ddlHasTime" />
             含时间
           </label>
-          <input v-if="ddlHasTime" type="time" v-model="ddlTime" />
+          <input v-if="ddlHasTime" type="time" v-model="ddlTime" class="time-input" />
         </template>
       </div>
 
+      <h4 class="sec"><Icon name="image" :size="12" /> 备注 / 附件</h4>
       <label class="field">
-        <span class="lab"><Icon name="note" :size="13" /> 备注</span>
-        <textarea v-model="note" rows="2" placeholder="可选"></textarea>
+        <textarea v-model="note" rows="2" placeholder="备注（可选）"></textarea>
       </label>
-
       <div class="field">
-        <span class="lab"><Icon name="image" :size="13" /> 关联文件 / 文件夹</span>
         <div v-if="attachment" class="attach-row">
           <span class="attach-name" :title="attachment"><Icon name="image" :size="13" /> {{ attachmentName }}</span>
           <button type="button" class="mini-btn" @click="clearAttachment"><Icon name="x" :size="13" /></button>
@@ -242,12 +311,16 @@ h3 {
   display: flex;
 }
 .close-btn:hover { opacity: 1; background: rgba(128, 128, 128, 0.2); }
-/* 表单内容区有独立 padding */
-.modal :deep(.field),
-.modal > .field,
-.modal > p,
-.modal > .actions {
-  /* 由 field 自身 margin 控制 */
+/* 分区标题 */
+.sec {
+  margin: 14px 16px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.65;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
 }
 .field {
   display: flex;
@@ -268,16 +341,92 @@ h3 {
   align-items: center;
   gap: 5px;
   font-size: 12px;
-}
-.hint {
-  font-size: 11px;
-  color: var(--warning);
+  cursor: pointer;
+  white-space: nowrap;
 }
 .ddl-date {
   font-size: 12px;
   color: var(--accent);
   font-weight: 600;
+  white-space: nowrap;
 }
+/* 横向紧凑行（分段控件/勾选项组合） */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 16px 12px;
+}
+/* 分段控件 */
+.seg {
+  display: flex;
+  gap: 2px;
+  background: rgba(128, 128, 128, 0.12);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 7px;
+  padding: 2px;
+}
+.seg button {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.75;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.seg button:hover { opacity: 1; background: rgba(128, 128, 128, 0.15); }
+.seg button.sel { background: var(--accent); color: #fff; opacity: 1; }
+/* 优先级三档配色：中性 / 主题色 / 危险色 */
+.seg.prio button.p0.sel { background: rgba(128, 128, 128, 0.55); }
+.seg.prio button.p2.sel { background: var(--danger, #d0342c); }
+/* 重复方式分段不占满整行，与步进器同行 */
+.seg.repeat { flex: 0 1 auto; }
+.seg.repeat button { padding: 5px 10px; }
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 0 16px 12px;
+}
+.grid2 .field { margin: 0; }
+/* 间隔天数步进器 */
+.stepper { display: inline-flex; align-items: center; gap: 4px; }
+.stepper button {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  background: rgba(128, 128, 128, 0.12);
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.stepper button:hover { background: rgba(128, 128, 128, 0.25); }
+.stepper input { width: 46px; text-align: center; padding: 4px 2px; }
+.stepper input::-webkit-outer-spin-button,
+.stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.stepper input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
+.stepper .unit { font-size: 12px; opacity: 0.7; }
+/* 填充预览行 */
+.preview {
+  margin: -4px 16px 12px;
+  font-size: 11.5px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 6px;
+  padding: 6px 9px;
+}
+.time-input { width: 100px; }
 input[type='text'],
 input:not([type]),
 input[type='time'],
@@ -294,11 +443,32 @@ textarea {
 }
 input::placeholder, textarea::placeholder { color: currentColor; opacity: 0.4; }
 textarea { resize: vertical; }
-input[type='checkbox'] {
-  width: 15px;
-  height: 15px;
-  accent-color: var(--accent);
+/* 切换开关（与设置面板同款）：滑块左移右移，选中态主题色 */
+input[type='checkbox'].switch {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 34px; height: 20px;
+  border-radius: 10px;
+  background: rgba(128, 128, 128, 0.35);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.18s;
+  flex-shrink: 0;
+  margin: 0;
 }
+input[type='checkbox'].switch::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.18s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+input[type='checkbox'].switch:checked { background: var(--accent); }
+input[type='checkbox'].switch:checked::after { left: 16px; }
+input[type='checkbox'].switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .error {
   color: var(--danger);
   font-size: 12px;
@@ -311,6 +481,9 @@ input[type='checkbox'] {
   margin: 6px 16px 16px;
   padding-top: 10px;
   border-top: 1px solid rgba(128, 128, 128, 0.15);
+  position: sticky;
+  bottom: 0;
+  background: inherit;
 }
 .btn {
   padding: 8px 18px;

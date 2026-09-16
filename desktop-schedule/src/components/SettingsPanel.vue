@@ -11,6 +11,8 @@ const configStore = useConfigStore();
 const updateStore = useUpdateStore();
 const emit = defineEmits<{ close: [] }>();
 
+const tab = ref<'appearance' | 'behavior' | 'update'>('appearance');
+
 const autostart = ref(false);
 const alwaysOnTop = ref(false);
 const version = ref('');
@@ -46,7 +48,7 @@ const cities = [
   { label: '武汉', lat: 30.5928, lon: 114.3055 },
   { label: '西安', lat: 34.3416, lon: 108.9398 },
   { label: '南京', lat: 32.0603, lon: 118.7969 },
-  { label: '重庆', lat: 29.4316, lon: 106.9123 },
+  { label: '重庆', lat: 29.5623, lon: 106.5527 },
   { label: '天津', lat: 39.3434, lon: 117.3616 },
   { label: '哈尔滨', lat: 45.8038, lon: 126.5350 },
 ];
@@ -181,166 +183,191 @@ async function onDetectProxy() {
 <template>
   <div class="overlay" @click.self="emit('close')">
     <div class="modal">
-      <div class="modal-head">
-        <h3><Icon name="settings" :size="18" /> 设置</h3>
-        <button class="close-btn" @click="emit('close')" title="关闭"><Icon name="x" :size="18" /></button>
+      <div class="head-wrap">
+        <div class="modal-head">
+          <h3><Icon name="settings" :size="18" /> 设置</h3>
+          <button class="close-btn" @click="emit('close')" title="关闭"><Icon name="x" :size="18" /></button>
+        </div>
+
+        <div class="tabs">
+          <button :class="{ on: tab === 'appearance' }" @click="tab = 'appearance'">
+            <Icon name="image" :size="13" /> 外观
+          </button>
+          <button :class="{ on: tab === 'behavior' }" @click="tab = 'behavior'">
+            <Icon name="sun" :size="13" /> 功能
+          </button>
+          <button :class="{ on: tab === 'update' }" @click="tab = 'update'">
+            <Icon name="cloud" :size="13" /> 更新与数据
+          </button>
+        </div>
       </div>
 
-      <section class="group">
-        <h4><Icon name="image" :size="14" /> 背景主题</h4>
-        <div class="theme-row">
-          <button :class="{ sel: theme === 'dark' }" @click="pickTheme('dark')">
-            <Icon name="calendar" :size="14" /> 深色
-          </button>
-          <button :class="{ sel: theme === 'light' }" @click="pickTheme('light')">
-            <Icon name="calendar" :size="14" /> 浅色
-          </button>
-          <button :class="{ sel: theme === 'image' }" @click="pickImage">
-            <Icon name="image" :size="14" /> 图片
-          </button>
-        </div>
-      </section>
+      <!-- ============ 外观 ============ -->
+      <div v-show="tab === 'appearance'">
+        <section class="group">
+          <h4><Icon name="image" :size="14" /> 背景主题</h4>
+          <div class="theme-row">
+            <button :class="{ sel: theme === 'dark' }" @click="pickTheme('dark')">
+              <Icon name="calendar" :size="14" /> 深色
+            </button>
+            <button :class="{ sel: theme === 'light' }" @click="pickTheme('light')">
+              <Icon name="calendar" :size="14" /> 浅色
+            </button>
+            <button :class="{ sel: theme === 'image' }" @click="pickImage">
+              <Icon name="image" :size="14" /> 图片
+            </button>
+          </div>
+        </section>
 
-      <section class="group">
-        <h4><Icon name="star" :size="14" /> 配色</h4>
-        <div class="palette-grid">
-          <button
-            v-for="p in PALETTES"
-            :key="p.name"
-            class="palette-chip"
-            :class="{ sel: configStore.config.window.theme_name === p.name }"
-            @click="pickPalette(p.name)"
-          >
-            <span class="chip-dot" :style="{ background: p.darkBg }">
-              <span class="chip-accent" :style="{ background: p.darkAccent }"></span>
-            </span>
-            <span class="chip-label">{{ p.label }}</span>
-          </button>
-        </div>
-      </section>
+        <section class="group">
+          <h4><Icon name="star" :size="14" /> 配色</h4>
+          <div class="palette-grid">
+            <button
+              v-for="p in PALETTES"
+              :key="p.name"
+              class="palette-chip"
+              :class="{ sel: configStore.config.window.theme_name === p.name }"
+              @click="pickPalette(p.name)"
+            >
+              <span class="chip-dot" :style="{ background: p.darkBg }">
+                <span class="chip-accent" :style="{ background: p.darkAccent }"></span>
+              </span>
+              <span class="chip-label">{{ p.label }}</span>
+            </button>
+          </div>
+        </section>
 
-      <section class="group">
-        <h4><Icon name="type" :size="14" /> 字体</h4>
-        <label class="line">
-          <span>字号 {{ configStore.config.window.font_size }}px</span>
-          <input
-            type="range" min="12" max="22" step="1"
-            v-model.number="configStore.config.window.font_size"
-            @change="onFont"
-          />
-        </label>
-        <label class="line">
-          <span>字体</span>
-          <select v-model="configStore.config.window.font_family" @change="onFont">
-            <option v-for="f in fontFamilies" :key="f.value" :value="f.value">{{ f.label }}</option>
-          </select>
-        </label>
-      </section>
+        <section class="group">
+          <h4><Icon name="type" :size="14" /> 字体</h4>
+          <label class="line">
+            <span>字号 {{ configStore.config.window.font_size }}px</span>
+            <input
+              type="range" min="12" max="22" step="1" class="slider"
+              :style="{ '--p': ((configStore.config.window.font_size - 12) / 10 * 100) + '%' }"
+              v-model.number="configStore.config.window.font_size"
+              @change="onFont"
+            />
+          </label>
+          <label class="line">
+            <span>字体</span>
+            <select v-model="configStore.config.window.font_family" @change="onFont">
+              <option v-for="f in fontFamilies" :key="f.value" :value="f.value">{{ f.label }}</option>
+            </select>
+          </label>
+        </section>
 
-      <section class="group">
-        <h4><Icon name="image" :size="14" /> 背景透明度</h4>
-        <label class="line">
-          <span>{{ Math.round(configStore.config.window.opacity * 100) }}%</span>
-          <input
-            type="range" min="0.1" max="1" step="0.05"
-            v-model.number="configStore.config.window.opacity"
-            @change="onOpacity"
-          />
-        </label>
-        <p class="tip">仅影响背景，文字保持清晰</p>
-      </section>
+        <section class="group">
+          <h4><Icon name="image" :size="14" /> 背景透明度</h4>
+          <label class="line">
+            <span>{{ Math.round(configStore.config.window.opacity * 100) }}%</span>
+            <input
+              type="range" min="0.1" max="1" step="0.05" class="slider"
+              :style="{ '--p': ((configStore.config.window.opacity - 0.1) / 0.9 * 100) + '%' }"
+              v-model.number="configStore.config.window.opacity"
+              @change="onOpacity"
+            />
+          </label>
+          <p class="tip">仅影响背景，文字保持清晰</p>
+        </section>
+      </div>
 
-      <section class="group">
-        <h4><Icon name="sun" :size="14" /> 天气</h4>
-        <label class="line">
-          <span><Icon name="sun" :size="13" /> 启用天气</span>
-          <input type="checkbox" :checked="configStore.config.weather.enabled" @change="onWeatherToggle" />
-        </label>
-        <label class="line" v-if="configStore.config.weather.enabled">
-          <span><Icon name="pin" :size="13" /> 城市</span>
-          <select :value="configStore.config.weather.city" @change="onCityChange">
-            <option v-for="c in cities" :key="c.label" :value="c.label">{{ c.label }}</option>
-          </select>
-        </label>
-      </section>
+      <!-- ============ 功能 ============ -->
+      <div v-show="tab === 'behavior'">
+        <section class="group">
+          <h4><Icon name="sun" :size="14" /> 天气</h4>
+          <label class="line">
+            <span><Icon name="sun" :size="13" /> 启用天气</span>
+            <input type="checkbox" class="switch" :checked="configStore.config.weather.enabled" @change="onWeatherToggle" />
+          </label>
+          <label class="line" v-if="configStore.config.weather.enabled">
+            <span><Icon name="pin" :size="13" /> 城市</span>
+            <select :value="configStore.config.weather.city" @change="onCityChange">
+              <option v-for="c in cities" :key="c.label" :value="c.label">{{ c.label }}</option>
+            </select>
+          </label>
+        </section>
 
-      <section class="group">
-        <h4><Icon name="pin" :size="14" /> 窗口</h4>
-        <label class="line">
-          <span><Icon name="pin" :size="13" /> 始终置顶</span>
-          <input type="checkbox" :checked="alwaysOnTop" @change="onTop" />
-        </label>
-        <label class="line">
-          <span><Icon name="settings" :size="13" /> 开机自启</span>
-          <input type="checkbox" :checked="autostart" @change="(e) => onAutostart((e.target as HTMLInputElement).checked)" />
-        </label>
-      </section>
+        <section class="group">
+          <h4><Icon name="pin" :size="14" /> 窗口</h4>
+          <label class="line">
+            <span><Icon name="pin" :size="13" /> 始终置顶</span>
+            <input type="checkbox" class="switch" :checked="alwaysOnTop" @change="onTop" />
+          </label>
+          <label class="line">
+            <span><Icon name="settings" :size="13" /> 开机自启</span>
+            <input type="checkbox" class="switch" :checked="autostart" @change="(e) => onAutostart((e.target as HTMLInputElement).checked)" />
+          </label>
+        </section>
+      </div>
 
-      <section class="group">
-        <h4><Icon name="cloud" :size="14" /> 版本与更新</h4>
-        <p class="tip">当前版本 v{{ version }}</p>
-        <div class="data-row">
-          <button class="data-btn" @click="updateStore.manualCheck()"
-            :disabled="updateStore.checking || updateStore.downloading">
-            <Icon name="cloud" :size="14" />
-            {{ updateStore.checking ? '检查中…' : '检查更新' }}
-          </button>
-          <button v-if="updateStore.ready" class="data-btn" @click="updateStore.restart()">
-            <Icon name="check" :size="14" /> 立即重启
-          </button>
-        </div>
-        <p class="data-tip" v-if="updateStore.downloading && updateStore.progress">
-          下载中 {{ updateStore.progress.percent }}%
-        </p>
-        <p class="data-tip" v-else-if="updateStore.info && !updateStore.info.has_update">
-          已是最新版本
-        </p>
-        <p class="data-tip" v-else-if="updateStore.error" style="color: var(--danger, #c0392b)">
-          {{ updateStore.error }}
-        </p>
-        <label class="line">
-          <span>每日自动检查</span>
-          <input type="checkbox" :checked="configStore.config.update.auto_check" @change="onAutoCheck" />
-        </label>
-        <label class="line">
-          <span>更新源</span>
-          <select :value="configStore.config.update.source" @change="onUpdateSource">
-            <option value="auto">自动（双源取新）</option>
-            <option value="gitee">Gitee（国内直连）</option>
-            <option value="github">GitHub</option>
-          </select>
-        </label>
-        <label class="line">
-          <span>代理</span>
-          <select :value="configStore.config.update.proxy_mode" @change="onProxyMode">
-            <option value="auto">自动检测</option>
-            <option value="manual">手动</option>
-            <option value="direct">直连</option>
-          </select>
-        </label>
-        <label class="line" v-if="configStore.config.update.proxy_mode === 'manual'">
-          <span>地址</span>
-          <input type="text" class="proxy-input" :value="configStore.config.update.proxy"
-            @change="onProxyInput" placeholder="http://127.0.0.1:7899" />
-        </label>
-        <div class="data-row" v-if="configStore.config.update.proxy_mode === 'auto'">
-          <button class="data-btn" @click="onDetectProxy">检测代理</button>
-          <span class="data-tip" v-if="detectMsg">{{ detectMsg }}</span>
-        </div>
-      </section>
+      <!-- ============ 更新与数据 ============ -->
+      <div v-show="tab === 'update'">
+        <section class="group">
+          <h4><Icon name="cloud" :size="14" /> 版本与更新</h4>
+          <p class="tip">当前版本 v{{ version }}</p>
+          <div class="data-row">
+            <button class="data-btn" @click="updateStore.manualCheck()"
+              :disabled="updateStore.checking || updateStore.downloading">
+              <Icon name="cloud" :size="14" />
+              {{ updateStore.checking ? '检查中…' : '检查更新' }}
+            </button>
+            <button v-if="updateStore.ready" class="data-btn" @click="updateStore.restart()">
+              <Icon name="check" :size="14" /> 立即重启
+            </button>
+          </div>
+          <p class="data-tip" v-if="updateStore.downloading && updateStore.progress">
+            下载中 {{ updateStore.progress.percent }}%
+          </p>
+          <p class="data-tip" v-else-if="updateStore.info && !updateStore.info.has_update">
+            已是最新版本
+          </p>
+          <p class="data-tip" v-else-if="updateStore.error" style="color: var(--danger, #c0392b)">
+            {{ updateStore.error }}
+          </p>
+          <label class="line">
+            <span>每日自动检查</span>
+            <input type="checkbox" class="switch" :checked="configStore.config.update.auto_check" @change="onAutoCheck" />
+          </label>
+          <label class="line">
+            <span>更新源</span>
+            <select :value="configStore.config.update.source" @change="onUpdateSource">
+              <option value="auto">自动（双源取新）</option>
+              <option value="gitee">Gitee（国内直连）</option>
+              <option value="github">GitHub</option>
+            </select>
+          </label>
+          <label class="line">
+            <span>代理</span>
+            <select :value="configStore.config.update.proxy_mode" @change="onProxyMode">
+              <option value="auto">自动检测</option>
+              <option value="manual">手动</option>
+              <option value="direct">直连</option>
+            </select>
+          </label>
+          <label class="line" v-if="configStore.config.update.proxy_mode === 'manual'">
+            <span>地址</span>
+            <input type="text" class="proxy-input" :value="configStore.config.update.proxy"
+              @change="onProxyInput" placeholder="http://127.0.0.1:7899" />
+          </label>
+          <div class="data-row" v-if="configStore.config.update.proxy_mode === 'auto'">
+            <button class="data-btn" @click="onDetectProxy">检测代理</button>
+            <span class="data-tip" v-if="detectMsg">{{ detectMsg }}</span>
+          </div>
+        </section>
 
-      <section class="group">
-        <h4><Icon name="note" :size="14" /> 数据</h4>
-        <div class="data-row">
-          <button class="data-btn" @click="onExport" :disabled="exporting">
-            <Icon name="note" :size="14" /> {{ exporting ? '导出中…' : '导出日程' }}
-          </button>
-          <button class="data-btn" @click="onImport" :disabled="importing">
-            <Icon name="image" :size="14" /> {{ importing ? '导入中…' : '导入日程' }}
-          </button>
-        </div>
-        <p class="data-tip" v-if="dataMsg">{{ dataMsg }}</p>
-      </section>
+        <section class="group">
+          <h4><Icon name="note" :size="14" /> 数据</h4>
+          <div class="data-row">
+            <button class="data-btn" @click="onExport" :disabled="exporting">
+              <Icon name="note" :size="14" /> {{ exporting ? '导出中…' : '导出日程' }}
+            </button>
+            <button class="data-btn" @click="onImport" :disabled="importing">
+              <Icon name="image" :size="14" /> {{ importing ? '导入中…' : '导入日程' }}
+            </button>
+          </div>
+          <p class="data-tip" v-if="dataMsg">{{ dataMsg }}</p>
+        </section>
+      </div>
 
       <div class="actions">
         <button class="btn primary" @click="emit('close')">完成</button>
@@ -363,7 +390,7 @@ async function onDetectProxy() {
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(128, 128, 128, 0.25);
   border-radius: 14px;
-  width: 100%; max-width: 360px;
+  width: 100%; max-width: 380px;
   max-height: 80vh; overflow-y: auto;
   color: inherit;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
@@ -372,11 +399,14 @@ async function onDetectProxy() {
   -ms-overflow-style: none;
 }
 .modal::-webkit-scrollbar { display: none; }
+/* 头部（标题 + 标签页）整体吸顶 */
+.head-wrap {
+  position: sticky; top: 0; background: inherit; z-index: 2;
+}
 .modal-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px 10px;
   border-bottom: 1px solid rgba(128, 128, 128, 0.2);
-  position: sticky; top: 0; background: inherit; z-index: 2;
 }
 h3 {
   margin: 0; font-size: 15px; font-weight: 600;
@@ -388,6 +418,24 @@ h3 {
   display: flex;
 }
 .close-btn:hover { opacity: 1; background: rgba(128, 128, 128, 0.2); }
+/* 标签页 */
+.tabs {
+  display: flex; gap: 4px;
+  padding: 10px 16px 0;
+}
+.tabs button {
+  flex: 1;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  color: inherit; opacity: 0.7;
+  padding: 7px 2px; border-radius: 7px;
+  font-size: 12px; cursor: pointer; font-family: inherit;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+}
+.tabs button:hover { background: rgba(128, 128, 128, 0.2); opacity: 1; }
+.tabs button.on {
+  background: var(--accent); border-color: var(--accent); color: #fff; opacity: 1;
+}
 .group { margin: 12px 16px 16px; }
 h4 {
   margin: 0 0 10px; font-size: 12px; opacity: 0.7; font-weight: 600;
@@ -417,9 +465,64 @@ h4 {
   display: inline-flex; align-items: center; gap: 0.35em;
 }
 .tip { font-size: 11px; opacity: 0.5; margin: 4px 0 0; }
-input[type='range'] { flex: 1; min-width: 0; }
-input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--accent); }
+/* 填充式拖动轴：主题色进度轨道 + 圆形拇指（--p 为填充百分比，模板内联注入） */
+input[type='range'].slider {
+  flex: 1; min-width: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+  margin: 0;
+}
+input[type='range'].slider::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--accent) var(--p, 0%), rgba(128, 128, 128, 0.3) var(--p, 0%));
+}
+input[type='range'].slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent);
+  margin-top: -4.5px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  transition: transform 0.12s;
+}
+input[type='range'].slider::-webkit-slider-thumb:hover { transform: scale(1.15); }
+/* 切换开关：滑块左移右移，选中态主题色 */
+input[type='checkbox'].switch {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 34px; height: 20px;
+  border-radius: 10px;
+  background: rgba(128, 128, 128, 0.35);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.18s;
+  flex-shrink: 0;
+  margin: 0;
+}
+input[type='checkbox'].switch::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.18s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+input[type='checkbox'].switch:checked { background: var(--accent); }
+input[type='checkbox'].switch:checked::after { left: 16px; }
+input[type='checkbox'].switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 select {
+  background: rgba(128,128,128,0.15); color: inherit;
+  border: 1px solid rgba(128,128,128,0.25); border-radius: 6px;
+  padding: 6px 8px; font-size: 13px; font-family: inherit;
+}
+input[type='text'] {
   background: rgba(128,128,128,0.15); color: inherit;
   border: 1px solid rgba(128,128,128,0.25); border-radius: 6px;
   padding: 6px 8px; font-size: 13px; font-family: inherit;
@@ -430,6 +533,7 @@ select option { background: #2a2c3a; color: #f0f0f5; }
   display: flex; justify-content: flex-end;
   margin: 6px 16px 16px; padding-top: 10px;
   border-top: 1px solid rgba(128, 128, 128, 0.15);
+  position: sticky; bottom: 0; background: inherit;
 }
 .btn {
   padding: 8px 18px; border-radius: 6px; border: none;
@@ -473,7 +577,7 @@ select option { background: #2a2c3a; color: #f0f0f5; }
 }
 .chip-label { font-size: 11px; opacity: 0.9; }
 
-.data-row { display: flex; gap: 6px; }
+.data-row { display: flex; gap: 6px; align-items: center; }
 .data-btn {
   flex: 1;
   background: rgba(128,128,128,0.12);
@@ -486,4 +590,5 @@ select option { background: #2a2c3a; color: #f0f0f5; }
 .data-btn:hover:not(:disabled) { background: rgba(128,128,128,0.22); opacity: 1; }
 .data-btn:disabled { opacity: 0.5; cursor: default; }
 .data-tip { font-size: 11px; opacity: 0.7; margin: 6px 0 0; word-break: break-all; }
+.proxy-input { max-width: 150px; }
 </style>

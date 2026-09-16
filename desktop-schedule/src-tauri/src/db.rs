@@ -34,6 +34,8 @@ pub struct NewSchedule {
     pub priority: i64,
     pub ddl_at: Option<String>,
     pub attachment: Option<String>, // 关联的文件/文件夹路径
+    #[serde(default)]
+    pub interval_days: Option<i32>, // Some(n>=2)=每隔 n 天出现一次；None/1=每日填充
 }
 
 /// 数据库连接的线程安全封装
@@ -215,6 +217,14 @@ pub fn create_schedules(conn: &Connection, input: &NewSchedule) -> anyhow::Resul
         return Err(anyhow::anyhow!("end_date 不能早于 start_date"));
     }
 
+    let interval = input.interval_days.filter(|n| *n >= 2);
+    // 间隔模式下截止跟随各次出现日期（保留 ddl_at 里的时间部分，如 "23:59"）
+    let per_day_ddl = interval.is_some() && input.ddl_at.is_some();
+    let ddl_time = input
+        .ddl_at
+        .as_ref()
+        .and_then(|s| s.split_once(' ').map(|(_, t)| t.to_string()));
+
     let group_id = uuid::Uuid::new_v4().to_string();
     let has_ddl = input.ddl_at.is_some();
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -228,24 +238,36 @@ pub fn create_schedules(conn: &Connection, input: &NewSchedule) -> anyhow::Resul
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10, ?10)",
         )?;
         let mut cur = start;
+        let mut offset: i32 = 0;
         loop {
-            stmt.execute(params![
-                group_id,
-                input.title,
-                cur.format("%Y-%m-%d").to_string(),
-                input.time_of_day,
-                input.note,
-                input.priority,
-                has_ddl as i64,
-                input.ddl_at,
-                input.attachment,
-                now,
-            ])?;
-            ids.push(tx.last_insert_rowid());
+            if interval.map_or(true, |n| offset % n == 0) {
+                let ddl_at: Option<String> = if per_day_ddl {
+                    Some(match &ddl_time {
+                        Some(t) => format!("{} {t}", cur.format("%Y-%m-%d")),
+                        None => cur.format("%Y-%m-%d").to_string(),
+                    })
+                } else {
+                    input.ddl_at.clone()
+                };
+                stmt.execute(params![
+                    group_id,
+                    input.title,
+                    cur.format("%Y-%m-%d").to_string(),
+                    input.time_of_day,
+                    input.note,
+                    input.priority,
+                    has_ddl as i64,
+                    ddl_at,
+                    input.attachment,
+                    now,
+                ])?;
+                ids.push(tx.last_insert_rowid());
+            }
             if cur == end {
                 break;
             }
             cur = cur.succ_opt().ok_or_else(|| anyhow::anyhow!("日期溢出"))?;
+            offset += 1;
         }
     }
     tx.commit()?;

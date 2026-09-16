@@ -26,6 +26,8 @@ export interface NewSchedule {
   priority?: number;
   ddl_at: string | null;
   attachment: string | null;
+  /** >=2 时每隔 n 天出现一次（其余天数跳过）；缺省=每日填充 */
+  interval_days?: number | null;
 }
 
 export interface UpdateSchedule {
