@@ -27,13 +27,22 @@ export const useConfigStore = defineStore('config', () => {
   const loaded = ref(false);
 
   async function load() {
-    try {
-      config.value = await api.getConfig();
-    } catch (e) {
-      // 不再静默回退：记日志留痕（app.log），下次启动可查
-      void api.appendLog(`配置加载失败，已回退默认值：${String(e)}`);
-      config.value = JSON.parse(JSON.stringify(defaultConfig));
+    // 启动竞态防护：后端 setup（建库/迁移/回填）可能尚未 app.manage(AppState)，
+    // 此时 get_config 报 "state not managed"——重试等待（100ms×50=最多5秒），
+    // 超时才回退默认值。避免"更新后首次启动配置短暂失忆"。
+    let lastErr: unknown = null;
+    for (let i = 0; i < 50; i++) {
+      try {
+        config.value = await api.getConfig();
+        loaded.value = true;
+        return;
+      } catch (e) {
+        lastErr = e;
+        await new Promise((r) => setTimeout(r, 100));
+      }
     }
+    void api.appendLog(`配置加载失败（已重试5秒），回退默认值：${String(lastErr)}`);
+    config.value = JSON.parse(JSON.stringify(defaultConfig));
     loaded.value = true;
   }
 
