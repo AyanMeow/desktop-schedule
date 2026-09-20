@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { api } from './api';
 import { getCurrentWindow, getAllWindows, LogicalPosition, LogicalSize } from '@tauri-apps/api/window';
-import { listen } from '@tauri-apps/api/event';
+import { listen, emit } from '@tauri-apps/api/event';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { useScheduleStore } from './stores/schedules';
 import { useConfigStore } from './stores/config';
@@ -19,9 +19,10 @@ import AchievementToast from './components/AchievementToast.vue';
 import AchievementPanel from './components/AchievementPanel.vue';
 import UpdateBar from './components/UpdateBar.vue';
 import MemoWidget from './components/MemoWidget.vue';
+import DrawerWidget from './components/DrawerWidget.vue';
 import WeatherBadge from './components/WeatherBadge.vue';
 import Icon from './components/Icon.vue';
-import { getPalette, getDdlScale } from './themes';
+import { useThemeStyle } from './composables/themeStyle';
 import { toISO } from './utils/date';
 import type { WhatsNew } from './types';
 
@@ -35,6 +36,8 @@ const updateStore = useUpdateStore();
 const isPanel = computed(() => window.location.hash === '#panel');
 // 是否为临时待办便签窗口（memo 窗口 url 带 #memo）
 const isMemo = computed(() => window.location.hash === '#memo');
+// 是否为左侧抽屉窗口（drawer 窗口 url 带 #drawer）
+const isDrawer = computed(() => window.location.hash === '#drawer');
 
 // 更新按钮（顶栏原品牌位）：有新版且未在下载/未就绪时显示
 const canStartUpdate = computed(
@@ -67,82 +70,22 @@ async function dismissWhatsNew() {
   if (v) configStore.config.update.last_seen_version = v;
 }
 const showSettings = ref(false);
-const showMenu = ref(false);
 const menuLocked = ref(false);
 const menuTop = ref(false);
 const addPresetDate = ref<string | null>(null);
 const contentRef = ref<HTMLElement | null>(null);
 
-const theme = computed(() => configStore.config.window.bg_mode);
-const isLight = computed(() => theme.value === 'light');
-
-// 根容器样式：字体由 CSS 变量驱动，子组件用 em 继承
-const rootStyle = computed(() => {
-  const light = isLight.value;
-  const p = getPalette(configStore.config.window.theme_name);
-  const fg = light ? p.lightFg : p.darkFg;
-  const accent = light ? p.lightAccent : p.darkAccent;
-  const warning = light ? p.lightWarning : p.darkWarning;
-  const danger = light ? p.lightDanger : p.darkDanger;
-  const ddl = getDdlScale(p, light);
-  // veil：文字背后的磨砂底板
-  const veilBg = light
-    ? hexToRgba(p.lightBg, 0.55)
-    : hexToRgba(p.darkBg, 0.55);
-  return {
-    '--app-font-size': `${configStore.config.window.font_size}px`,
-    '--app-font-family': configStore.config.window.font_family,
-    '--app-fg': fg,
-    '--app-fg-soft': fg + 'a6', // 约 65% 不透明
-    '--modal-bg': light ? p.lightBg : p.darkBg,
-    '--veil-bg': veilBg,
-    '--accent': accent,
-    '--accent-soft': accent + '2e', // 约 18%
-    '--warning': warning,
-    '--danger': danger,
-    '--ddl-overdue': ddl.overdue,
-    '--ddl-le1': ddl.le1,
-    '--ddl-le3': ddl.le3,
-    '--ddl-le7': ddl.le7,
-    '--ddl-gt7': ddl.gt7,
-    fontFamily: configStore.config.window.font_family,
-    fontSize: `${configStore.config.window.font_size}px`,
-    color: fg,
-  };
-});
-
-// hex 转 rgba（veil 半透明用）
-function hexToRgba(hex: string, alpha: number): string {
-  const h = hex.replace('#', '');
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
-
-// 背景层样式：透明度只作用于背景，前景文字不受影响
-const bgLayerStyle = computed(() => {
-  const w = configStore.config.window;
-  if (w.bg_mode === 'image' && w.bg_value) {
-    return {
-      backgroundImage: `url(${w.bg_value})`,
-      opacity: w.opacity,
-    };
-  }
-  // dark/light 模式：背景色由 palette 决定（切主题时即时生效）
-  const p = getPalette(w.theme_name);
-  const bg = isLight.value ? p.lightBg : p.darkBg;
-  return {
-    background: bg,
-    opacity: w.opacity,
-  };
-});
+// 主题样式：主窗与抽屉窗口共用的 composable（原内联逻辑抽取，行为不变）
+const { theme, rootStyle, bgLayerStyle } = useThemeStyle(
+  () => configStore.config.window
+);
 
 // 仅拖拽顶栏
 async function onTitlebarDown(e: MouseEvent) {
   if (locked.value || menuLocked.value) return;
   const target = e.target as HTMLElement;
-  if (target.closest('button, input, .dropdown')) return;
+  if (target.closest('button, input')) return;
+  void emit('drawer-hide');
   await getCurrentWindow().startDragging();
 }
 
@@ -150,21 +93,82 @@ async function onResizeDown(e: MouseEvent) {
   e.stopPropagation();
   e.preventDefault();
   if (locked.value || menuLocked.value) return;
+  void emit('drawer-hide');
   // SouthEast = 同时向右(东)和向下(南)拉伸，支持斜向拖动
   await getCurrentWindow().startResizeDragging('SouthEast');
+}
+
+// ---- 左缘抽屉热区：鼠标靠近左缘即展开（悬停心跳防误收起） ----
+let hotzoneLast = 0;
+function onHotEnter() {
+  void emit('open-drawer');
+}
+function onHotMove() {
+  const now = Date.now();
+  if (now - hotzoneLast < 200) return;
+  hotzoneLast = now;
+  void emit('open-drawer');
+}
+// 鼠标进入贴片正文：用户已离开左缘，立即收回抽屉
+function onFgEnter() {
+  void emit('drawer-hide');
 }
 
 async function toggleLock() {
   menuLocked.value = await invoke<boolean>('toggle_lock');
   locked.value = menuLocked.value;
-  showMenu.value = false;
 }
 
 async function toggleTop() {
   menuTop.value = await invoke<boolean>('toggle_always_on_top');
   configStore.config.window.always_on_top = menuTop.value;
   await configStore.save();
-  showMenu.value = false;
+}
+
+// ---- 鼠标穿透（动态命中切换） ----
+const passthrough = ref(false);
+let reportTimer: number | undefined;
+
+// 收集可交互元素并上报物理屏幕坐标区域：
+// 顶栏 / 勾选框 / 缩放手柄 / 抽屉热区 / 弹窗遮罩（弹窗打开时覆盖全窗即恢复全窗交互）
+async function reportRegions() {
+  try {
+    const win = getCurrentWindow();
+    const [pos, sf] = await Promise.all([win.outerPosition(), win.scaleFactor()]);
+    const els = document.querySelectorAll<HTMLElement>(
+      '.topbar, .drawer-hotzone, .check, .resize-handle, .overlay, .wn-overlay'
+    );
+    const rects = Array.from(els)
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          x: Math.round(pos.x + r.left * sf),
+          y: Math.round(pos.y + r.top * sf),
+          w: Math.round(r.width * sf),
+          h: Math.round(r.height * sf),
+        };
+      })
+      .filter((r) => r.w > 0 && r.h > 0);
+    await api.setHitRegions(rects);
+  } catch {
+    /* 忽略：窗口未就绪等 */
+  }
+}
+
+async function togglePassthrough() {
+  passthrough.value = !passthrough.value;
+  configStore.config.window.mouse_passthrough = passthrough.value;
+  await configStore.save();
+  await api.setMousePassthrough(passthrough.value);
+  if (passthrough.value) {
+    await reportRegions();
+    if (!reportTimer) {
+      reportTimer = window.setInterval(() => void reportRegions(), 400);
+    }
+  } else if (reportTimer) {
+    window.clearInterval(reportTimer);
+    reportTimer = undefined;
+  }
 }
 
 function openAddFor(dateISO?: string | null) {
@@ -230,6 +234,23 @@ let geomTimer: number | undefined;
 let unlistenMoved: UnlistenFn | undefined;
 let unlistenResized: UnlistenFn | undefined;
 let unlistenImported: UnlistenFn | undefined;
+let unlistenDrawerAction: UnlistenFn | undefined;
+
+// 配置变更广播（防抖）：仅主窗口注册，抽屉监听后重新拉取配置、主题即时跟随。
+// （不能在抽屉窗口注册：抽屉回写配置会再触发 watch，形成自发自收循环）
+let cfgBroadcastTimer: number | undefined;
+if (!isPanel.value && !isMemo.value && !isDrawer.value) {
+  watch(
+    () => configStore.config,
+    () => {
+      if (cfgBroadcastTimer) window.clearTimeout(cfgBroadcastTimer);
+      cfgBroadcastTimer = window.setTimeout(() => {
+        void emit('config-changed');
+      }, 250);
+    },
+    { deep: true }
+  );
+}
 async function saveGeometry() {
   const win = getCurrentWindow();
   try {
@@ -275,6 +296,8 @@ onMounted(async () => {
   }
   // 临时待办便签：按需显示（顶栏按钮触发），无数据加载
   if (isMemo.value) return;
+  // 左侧抽屉：自管显示/隐藏/主题，由主窗热区事件触发
+  if (isDrawer.value) return;
   await configStore.load();
 
   // 恢复窗口几何（位置/大小）：完整 await（不留吞错死角），set 后回读校验，
@@ -323,6 +346,13 @@ onMounted(async () => {
   locked.value = configStore.config.window.locked;
   menuLocked.value = locked.value;
   menuTop.value = configStore.config.window.always_on_top;
+  // 鼠标穿透启动恢复
+  passthrough.value = !!configStore.config.window.mouse_passthrough;
+  if (passthrough.value) {
+    await api.setMousePassthrough(true);
+    await reportRegions();
+    reportTimer = window.setInterval(() => void reportRegions(), 400);
+  }
   scheduleStore.viewRange = (configStore.config.view.range as any) || 'week';
   scheduleStore.weekStart = (configStore.config.view.week_start as any) || 'monday';
   await scheduleStore.refresh();
@@ -357,6 +387,14 @@ onMounted(async () => {
     scheduleStore.refresh();
   });
 
+  // 抽屉入口动作：执行原顶栏按钮逻辑
+  unlistenDrawerAction = await listen<{ type: string }>('drawer-action', (e) => {
+    const t = e.payload?.type;
+    if (t === 'settings') showSettings.value = true;
+    else if (t === 'memo') void toggleMemo();
+    else if (t === 'achievements') showAchievements.value = true;
+  });
+
   // 所有加载完成，显示窗口（避免默认值闪烁）
   await api.showWindow('main');
   const autostartFlag = await api.isAutostartFlag();
@@ -371,12 +409,18 @@ onUnmounted(() => {
   unlistenMoved?.();
   unlistenResized?.();
   unlistenImported?.();
+  unlistenDrawerAction?.();
+  if (cfgBroadcastTimer) window.clearTimeout(cfgBroadcastTimer);
+  if (reportTimer) window.clearInterval(reportTimer);
 });
 </script>
 
 <template>
   <!-- 临时待办便签窗口（memo） -->
   <MemoWidget v-if="isMemo" />
+
+  <!-- 左侧抽屉窗口（drawer） -->
+  <DrawerWidget v-else-if="isDrawer" />
 
   <!-- 控制面板窗口（taskbar） -->
   <div v-else-if="isPanel" class="panel">
@@ -404,36 +448,17 @@ onUnmounted(() => {
     <!-- 文字底板层：磨砂玻璃，给文字柔和托底，保证低透明度下清晰 -->
     <div class="fg-veil"></div>
 
-    <!-- 前景内容层（不透明） -->
-    <div class="fg">
+    <!-- 前景内容层（不透明）；鼠标移入正文=离开左缘热区，收回抽屉 -->
+    <div class="fg" @mouseenter="onFgEnter">
       <header class="topbar" @mousedown.left="onTitlebarDown">
-        <div class="menu-wrap">
-          <button class="icon-btn" @click="showMenu = !showMenu" title="菜单">
-            <Icon name="menu" :size="18" />
-          </button>
-          <div v-if="showMenu" class="dropdown" @click.stop>
-            <button @click="toggleLock">
-              <Icon name="unlock" :size="15" v-if="menuLocked" />
-              <Icon name="lock" :size="15" v-else />
-              {{ menuLocked ? '解除锁定' : '锁定位置' }}
-            </button>
-            <button @click="toggleTop">
-              <Icon name="pin" :size="15" />
-              {{ menuTop ? '取消置顶' : '置顶' }}
-            </button>
-            <button @click="showAdd = true; showMenu = false; addPresetDate = expandedDate">
-              <Icon name="plus" :size="15" />
-              添加日程
-            </button>
-            <button @click="showSettings = true; showMenu = false">
-              <Icon name="settings" :size="15" />
-              设置
-            </button>
-          </div>
-        </div>
-        <!-- 临时待办：菜单按钮右侧，收起/唤起便签 -->
-        <button class="icon-btn" @click="toggleMemo" title="临时待办">
-          <Icon name="note" :size="17" />
+        <!-- 鼠标穿透开关（原菜单位置）：开启后除可交互区域外鼠标直达桌面 -->
+        <button
+          class="icon-btn"
+          :class="{ active: passthrough }"
+          @click="togglePassthrough"
+          title="鼠标穿透"
+        >
+          <Icon name="mouse" :size="17" />
         </button>
         <!-- 原"桌面日程"位置：有新版本时显示绿色更新按钮（悬停看公告，点击开始更新） -->
         <div class="brand-slot">
@@ -448,9 +473,6 @@ onUnmounted(() => {
           </div>
         </div>
         <WeatherBadge />
-        <button class="icon-btn" @click="showAchievements = true" title="成就">
-          <Icon name="trophy" :size="17" />
-        </button>
         <div class="topbar-actions">
           <button class="icon-btn" @click="toggleLock" :title="menuLocked ? '解除锁定' : '锁定位置'">
             <Icon :name="menuLocked ? 'lock' : 'unlock'" :size="17" />
@@ -474,6 +496,9 @@ onUnmounted(() => {
         />
       </div>
     </div>
+
+    <!-- 左缘抽屉热区：鼠标靠近左缘即向左展开抽屉（设置/临时待办/成就） -->
+    <div class="drawer-hotzone" @mouseenter="onHotEnter" @mousemove="onHotMove"></div>
 
     <div class="resize-handle" @mousedown.left="onResizeDown" title="拖动调整大小"></div>
 
@@ -549,6 +574,15 @@ html, body, #app {
   display: flex;
   flex-direction: column;
 }
+/* 左缘抽屉热区：隐形，宽 12px 全高 */
+.drawer-hotzone {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12px;
+  height: 100%;
+  z-index: 40;
+}
 .topbar {
   display: flex;
   align-items: center;
@@ -623,7 +657,6 @@ html, body, #app {
   color: var(--app-fg-soft, #9aa0b4);
 }
 .upd-tip-body::-webkit-scrollbar { display: none; }
-.menu-wrap { position: relative; }
 .topbar-actions { display: flex; align-items: center; gap: 0.2em; }
 .icon-btn.active { background: rgba(108,140,255,0.3); color: #6c8cff; }
 .icon-btn {
@@ -640,37 +673,6 @@ html, body, #app {
   justify-content: center;
 }
 .icon-btn:hover { opacity: 1; background: rgba(128, 128, 128, 0.2); }
-.dropdown {
-  position: absolute;
-  top: 2.2em;
-  left: 0;
-  background: #2a2c3a;
-  color: #f0f0f5;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  z-index: 50;
-  min-width: 150px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-}
-.dropdown button {
-  background: transparent;
-  border: none;
-  color: #e0e0ec;
-  padding: 0.55em 0.8em;
-  text-align: left;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 0.85em;
-  font-family: inherit;
-  display: flex;
-  align-items: center;
-  gap: 0.5em;
-}
-.dropdown button:hover { background: rgba(255, 255, 255, 0.08); }
 .content {
   flex: 1;
   overflow-y: auto;

@@ -70,6 +70,8 @@ export interface WindowConfig {
   font_size: number; // px
   font_family: string;
   theme_name: string; // 配色预设名
+  /** 鼠标穿透：顶栏/勾选框等区域外穿透到桌面（后端动态命中切换） */
+  mouse_passthrough?: boolean;
 }
 
 export interface ViewConfig {

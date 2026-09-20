@@ -74,6 +74,11 @@ export const api = {
   setAutostart: (enabled: boolean) => invoke<boolean>('set_autostart', { enabled }),
   isAutostartEnabled: () => invoke<boolean>('is_autostart_enabled'),
 
+  // 鼠标穿透
+  setMousePassthrough: (enabled: boolean) => invoke<void>('set_mouse_passthrough', { enabled }),
+  setHitRegions: (rects: Array<{ x: number; y: number; w: number; h: number }>) =>
+    invoke<void>('set_hit_regions', { rects }),
+
   // 导入 / 导出
   exportSchedules: () => invoke<string>('export_schedules'),
   importSchedules: () => invoke<number>('import_schedules'),

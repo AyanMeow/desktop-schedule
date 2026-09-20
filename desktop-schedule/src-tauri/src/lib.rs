@@ -14,12 +14,18 @@ mod weather;
 mod window_state;
 use window_state::{WindowState, WindowStateExt};
 
-// 最小 Win32 FFI 声明（仅为抗"显示桌面"监控用 3 个函数，不引入 windows crate 直接依赖）
+// 最小 Win32 FFI 声明（仅为抗"显示桌面"监控与鼠标穿透命中用，不引入 windows crate 直接依赖）
 #[allow(non_snake_case)]
 mod win32 {
     pub type HWND = *mut core::ffi::c_void;
+    #[repr(C)]
+    pub struct POINT {
+        pub x: i32,
+        pub y: i32,
+    }
     extern "system" {
         pub fn IsIconic(hWnd: HWND) -> i32;
+        pub fn GetCursorPos(lpPoint: *mut POINT) -> i32;
         pub fn DwmGetWindowAttribute(
             hwnd: HWND,
             dwAttribute: u32,
@@ -49,6 +55,35 @@ pub struct IsAutostartFlag(pub bool);
 
 /// 主贴片前端是否已完成首次加载（供控制面板查询，避免提前 show 暴露默认界面）
 pub struct MainReady(pub AtomicBool);
+
+// ============ 鼠标穿透（动态命中切换） ============
+// Windows 只有窗口级穿透（set_ignore_cursor_events），无逐区域 API；
+// 做法：40ms 轮询光标，落在前端上报的可交互区域内→恢复交互，否则整窗穿透。
+/// 穿透功能总开关
+static PASSTHROUGH_ON: AtomicBool = AtomicBool::new(false);
+/// 可交互区域列表（物理屏幕坐标，前端 DOM 计算后上报）
+static HIT_REGIONS: Mutex<Vec<HitRect>> = Mutex::new(Vec::new());
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct HitRect {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+}
+
+#[tauri::command]
+fn set_mouse_passthrough(enabled: bool) -> Result<(), String> {
+    PASSTHROUGH_ON.store(enabled, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
+}
+
+#[tauri::command]
+fn set_hit_regions(rects: Vec<HitRect>) -> Result<(), String> {
+    let mut g = HIT_REGIONS.lock().map_err(|e| e.to_string())?;
+    *g = rects;
+    Ok(())
+}
 
 // ============ 日程命令 ============
 
@@ -764,6 +799,47 @@ pub fn run() {
                 }
             });
 
+            // 鼠标穿透：40ms 轮询光标位置做动态命中切换（区域由前端上报）。
+            // 状态变化时才调一次 set_ignore_cursor_events，避免每轮系统调用。
+            let hit_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let mut last_ignore: Option<bool> = None;
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(40));
+                    let on = PASSTHROUGH_ON.load(std::sync::atomic::Ordering::SeqCst);
+                    let Some(win) = hit_handle.get_webview_window("main") else {
+                        continue;
+                    };
+                    if !on {
+                        if last_ignore != Some(false) {
+                            let _ = win.set_ignore_cursor_events(false);
+                            last_ignore = Some(false);
+                        }
+                        continue;
+                    }
+                    if !win.is_visible().unwrap_or(false) {
+                        continue; // 隐藏态不干预，避免与显隐流程打架
+                    }
+                    let mut pt = win32::POINT { x: 0, y: 0 };
+                    if unsafe { win32::GetCursorPos(&mut pt) } == 0 {
+                        continue;
+                    }
+                    let hit = HIT_REGIONS
+                        .lock()
+                        .map(|g| {
+                            g.iter().any(|r| {
+                                pt.x >= r.x && pt.x < r.x + r.w && pt.y >= r.y && pt.y < r.y + r.h
+                            })
+                        })
+                        .unwrap_or(false);
+                    let want_ignore = !hit;
+                    if last_ignore != Some(want_ignore) {
+                        let _ = win.set_ignore_cursor_events(want_ignore);
+                        last_ignore = Some(want_ignore);
+                    }
+                }
+            });
+
             // 托盘菜单
             let panel = MenuItem::with_id(app, "panel", "控制面板", true, None::<&str>)?;
             let toggle_widget = MenuItem::with_id(app, "toggle_widget", "显示/隐藏贴片", true, None::<&str>)?;
@@ -869,7 +945,10 @@ pub fn run() {
             set_opacity,
             toggle_always_on_top,
             set_autostart,
-            is_autostart_enabled
+            is_autostart_enabled,
+            // 鼠标穿透
+            set_mouse_passthrough,
+            set_hit_regions
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -47,6 +47,8 @@ pub struct WindowConfig {
     pub font_family: String,
     #[serde(default = "default_theme_name")]
     pub theme_name: String, // 配色预设名（slate/forest/ocean/...）
+    #[serde(default)]
+    pub mouse_passthrough: bool, // 鼠标穿透：顶栏/勾选框等区域外穿透到桌面
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,6 +161,7 @@ impl Default for WindowConfig {
             font_size: default_font_size(),
             font_family: default_font_family(),
             theme_name: default_theme_name(),
+            mouse_passthrough: false,
         }
     }
 }

@@ -168,6 +168,11 @@ defineProps<{
       <polyline points="7 10 12 15 17 10" />
       <line x1="12" y1="15" x2="12" y2="3" />
     </template>
+    <!-- 鼠标（穿透开关） -->
+    <template v-else-if="name === 'mouse'">
+      <rect x="7" y="3" width="10" height="18" rx="5" />
+      <line x1="12" y1="7" x2="12" y2="10" />
+    </template>
   </svg>
 </template>
 
