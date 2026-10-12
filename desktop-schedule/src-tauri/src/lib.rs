@@ -480,6 +480,16 @@ async fn open_attachment(path: String) -> Result<(), String> {
     tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| e.to_string())
 }
 
+/// 用系统默认浏览器打开腾讯会议入会链接（域白名单，仅允许官方域）
+#[tauri::command]
+async fn open_meeting_url(url: String) -> Result<(), String> {
+    const ALLOWED_PREFIX: &str = "https://meeting.tencent.com/";
+    if !url.starts_with(ALLOWED_PREFIX) {
+        return Err(format!("非腾讯会议链接，已拒绝打开：{url}"));
+    }
+    tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string())
+}
+
 /// 手动拉取一次天气
 #[tauri::command]
 async fn fetch_weather(lat: f64, lon: f64, city: String) -> Result<weather::Weather, String> {
@@ -918,6 +928,7 @@ pub fn run() {
             delete_group,
             count_group,
             open_attachment,
+            open_meeting_url,
             fetch_weather,
             get_last_weather,
             export_schedules,

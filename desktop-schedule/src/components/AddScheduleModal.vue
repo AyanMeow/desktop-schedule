@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useScheduleStore } from '../stores/schedules';
 import { today } from '../utils/date';
@@ -32,6 +32,42 @@ const error = ref('');
 
 watch(() => props.presetDate, (v) => {
   if (v) { startDate.value = v; endDate.value = v; }
+});
+
+// ---- 腾讯会议邀请文本识别：粘贴/输入命中格式后自动填充 ----
+const MEETING_LINK_RE = /https:\/\/meeting\.tencent\.com\/\S+/;
+const tencentHint = ref(false);
+let tencentHintTimer: number | undefined;
+
+function tryParseMeeting(raw: string): boolean {
+  const quick =
+    raw.includes('meeting.tencent.com') || raw.includes('邀请您参加腾讯会议');
+  if (!quick) return false;
+  const link = raw.match(MEETING_LINK_RE)?.[0];
+  const time = raw.match(
+    /会议时间：(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/
+  );
+  if (!link || !time) return false; // 至少链接+时间齐才认定是会议邀请
+  const topic = raw.match(/会议主题：(.+)/)?.[1]?.trim();
+  const pad = (n: string) => n.padStart(2, '0');
+  if (topic) title.value = topic;
+  startDate.value = `${time[1]}-${pad(time[2])}-${pad(time[3])}`;
+  mode.value = 'single';
+  hasTime.value = true;
+  timeOfDay.value = `${pad(time[4])}:${time[5]}`;
+  note.value = raw.trim(); // 完整原文入备注：链接、会议号、时长全保留
+  tencentHint.value = true;
+  if (tencentHintTimer) window.clearTimeout(tencentHintTimer);
+  tencentHintTimer = window.setTimeout(() => (tencentHint.value = false), 3000);
+  return true;
+}
+
+watch(title, (v) => {
+  if (v) tryParseMeeting(v);
+});
+
+onUnmounted(() => {
+  if (tencentHintTimer) window.clearTimeout(tencentHintTimer);
 });
 
 // 切到多天时若结束早于开始，先把结束拉齐到开始
@@ -150,8 +186,9 @@ async function submit() {
 
       <label class="field">
         <span class="lab"><Icon name="note" :size="13" /> 标题 *</span>
-        <input v-model="title" placeholder="例如：晨跑" @keyup.enter="submit" />
+        <input v-model="title" placeholder="例如：晨跑，或粘贴腾讯会议邀请" @keyup.enter="submit" />
       </label>
+      <p class="preview" v-if="tencentHint">已识别腾讯会议信息并自动填充</p>
 
       <h4 class="sec"><Icon name="calendar" :size="12" /> 日期与重复</h4>
       <div class="seg">
@@ -382,8 +419,9 @@ h3 {
 }
 .seg button:hover { opacity: 1; background: rgba(128, 128, 128, 0.15); }
 .seg button.sel { background: var(--accent); color: #fff; opacity: 1; }
-/* 优先级三档配色：中性 / 主题色 / 危险色 */
+/* 优先级三档配色：中性灰 / 琥珀金(warning) / 红(danger)，与日程条标注色一致 */
 .seg.prio button.p0.sel { background: rgba(128, 128, 128, 0.55); }
+.seg.prio button.p1.sel { background: var(--warning, #e8b04d); }
 .seg.prio button.p2.sel { background: var(--danger, #d0342c); }
 /* 重复方式分段不占满整行，与步进器同行 */
 .seg.repeat { flex: 0 1 auto; }

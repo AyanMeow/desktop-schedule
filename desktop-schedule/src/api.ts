@@ -38,6 +38,9 @@ export const api = {
   openAttachment: (path: string) =>
     invoke<void>('open_attachment', { path }),
 
+  openMeetingUrl: (url: string) =>
+    invoke<void>('open_meeting_url', { url }),
+
   fetchWeather: (lat: number, lon: number, city: string) =>
     invoke<Weather>('fetch_weather', { lat, lon, city }),
 

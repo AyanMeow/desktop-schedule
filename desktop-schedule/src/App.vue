@@ -114,6 +114,65 @@ function onFgEnter() {
   void emit('drawer-hide');
 }
 
+// ---- 腾讯会议唤起：每小时粗扫 + 每场精确 T-5min 一次性定时 ----
+// 扫描直接查后端当日日程（不依赖当前视图范围，导航到其它周/月也不漏）
+const MEETING_LINK_RE = /https:\/\/meeting\.tencent\.com\/\S+/;
+const meetingTimers = new Map<number, number>();
+const meetingFired = new Set<number>();
+let meetingScanTimer: number | undefined;
+let stopMeetingWatch: (() => void) | undefined;
+
+async function scheduleMeetingLaunches() {
+  const todayISO = toISO(new Date());
+  const now = Date.now();
+  let today: Awaited<ReturnType<typeof api.listSchedules>>;
+  try {
+    today = await api.listSchedules(todayISO, todayISO);
+  } catch {
+    return;
+  }
+  const eligible = new Set(
+    today
+      .filter(
+        (s) => !s.completed && s.time_of_day && s.note && MEETING_LINK_RE.test(s.note)
+      )
+      .map((s) => s.id)
+  );
+  // 已完成/被删除的：取消挂着的定时器
+  for (const [id, t] of meetingTimers) {
+    if (!eligible.has(id)) {
+      window.clearTimeout(t);
+      meetingTimers.delete(id);
+    }
+  }
+  for (const s of today) {
+    if (!eligible.has(s.id) || meetingTimers.has(s.id) || meetingFired.has(s.id)) continue;
+    const link = s.note!.match(MEETING_LINK_RE)![0];
+    const fireAt = new Date(`${todayISO}T${s.time_of_day}:00`).getTime() - 5 * 60_000;
+    const delay = fireAt - now;
+    if (delay <= 0 || delay > 60 * 60_000) continue; // 只挂未来 1 小时内的场次
+    meetingTimers.set(
+      s.id,
+      window.setTimeout(() => {
+        meetingTimers.delete(s.id);
+        meetingFired.add(s.id);
+        api.openMeetingUrl(link).catch((e) => {
+          void api.appendLog(`腾讯会议唤起失败：${String(e)}`);
+        });
+      }, delay)
+    );
+  }
+}
+
+function stopMeetingLauncher() {
+  if (meetingScanTimer) window.clearInterval(meetingScanTimer);
+  for (const t of meetingTimers.values()) window.clearTimeout(t);
+  meetingTimers.clear();
+  stopMeetingWatch?.();
+  stopMeetingWatch = undefined;
+}
+
+
 async function toggleLock() {
   menuLocked.value = await invoke<boolean>('toggle_lock');
   locked.value = menuLocked.value;
@@ -382,6 +441,15 @@ onMounted(async () => {
   unlistenMoved = await win.onMoved(() => debounceSaveGeometry());
   unlistenResized = await win.onResized(() => debounceSaveGeometry());
 
+  // 腾讯会议唤起：启动即扫 + 每小时粗扫 + 日程变动事件驱动重扫
+  void scheduleMeetingLaunches();
+  meetingScanTimer = window.setInterval(() => void scheduleMeetingLaunches(), 60 * 60_000);
+  stopMeetingWatch = watch(
+    () => scheduleStore.schedules,
+    () => void scheduleMeetingLaunches(),
+    { deep: true }
+  );
+
   // 监听导入日程事件，刷新显示
   unlistenImported = await listen('schedules-imported', () => {
     scheduleStore.refresh();
@@ -412,6 +480,7 @@ onUnmounted(() => {
   unlistenDrawerAction?.();
   if (cfgBroadcastTimer) window.clearTimeout(cfgBroadcastTimer);
   if (reportTimer) window.clearInterval(reportTimer);
+  stopMeetingLauncher();
 });
 </script>
 
