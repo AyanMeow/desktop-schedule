@@ -19,6 +19,33 @@ pub struct AppConfig {
     pub weather: WeatherConfig,
     #[serde(default)]
     pub update: UpdateConfig,
+    #[serde(default)]
+    pub reminder: ReminderConfig,
+}
+
+/// 截止提醒：Windows 通知栏推送（提前 N 分钟，每档各提醒一次）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReminderConfig {
+    #[serde(default = "default_reminder_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_lead_minutes")]
+    pub lead_minutes: Vec<u32>, // 提前量（分钟），如 [10, 5]
+}
+
+fn default_reminder_enabled() -> bool {
+    true
+}
+fn default_lead_minutes() -> Vec<u32> {
+    vec![10, 5]
+}
+
+impl Default for ReminderConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            lead_minutes: default_lead_minutes(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,6 +169,7 @@ impl Default for AppConfig {
             encouragement: EncouragementConfig::default(),
             weather: WeatherConfig::default(),
             update: UpdateConfig::default(),
+            reminder: ReminderConfig::default(),
         }
     }
 }

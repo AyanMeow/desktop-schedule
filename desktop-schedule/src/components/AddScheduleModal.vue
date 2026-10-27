@@ -52,6 +52,7 @@ function tryParseMeeting(raw: string): boolean {
   const pad = (n: string) => n.padStart(2, '0');
   if (topic) title.value = topic;
   startDate.value = `${time[1]}-${pad(time[2])}-${pad(time[3])}`;
+  endDate.value = startDate.value; // 同步隐藏的结束值，消除单日模式下的残留不一致
   mode.value = 'single';
   hasTime.value = true;
   timeOfDay.value = `${pad(time[4])}:${time[5]}`;
@@ -143,12 +144,13 @@ function clearAttachment() { attachment.value = null; }
 async function submit() {
   error.value = '';
   if (!title.value.trim()) { error.value = '请填写标题'; return; }
-  if (new Date(endDate.value) < new Date(startDate.value)) {
+  // 校验用实际提交的结束值（单日=开始日期），不能直接比隐藏的 endDate 残留值
+  const finalEnd = mode.value === 'single' ? startDate.value : endDate.value;
+  if (new Date(finalEnd) < new Date(startDate.value)) {
     error.value = '结束日期不能早于开始日期'; return;
   }
   saving.value = true;
   try {
-    const finalEnd = mode.value === 'single' ? startDate.value : endDate.value;
     // 间隔模式下 ddl_at 传结束日期占位，后端按各次出现日期替换（时间部分保留）
     const ddlBase = mode.value === 'single' ? startDate.value : finalEnd;
     const ddlAt = autoDdl.value

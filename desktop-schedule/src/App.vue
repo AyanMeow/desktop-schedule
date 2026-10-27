@@ -114,63 +114,104 @@ function onFgEnter() {
   void emit('drawer-hide');
 }
 
-// ---- 腾讯会议唤起：每小时粗扫 + 每场精确 T-5min 一次性定时 ----
+// ---- 到点事件调度（腾讯会议 T-5 开链接 + 截止提醒通知）----
+// 每小时粗扫 + 日程/提醒配置变动事件驱动重扫 + 每事件精确一次性定时；
 // 扫描直接查后端当日日程（不依赖当前视图范围，导航到其它周/月也不漏）
 const MEETING_LINK_RE = /https:\/\/meeting\.tencent\.com\/\S+/;
-const meetingTimers = new Map<number, number>();
-const meetingFired = new Set<number>();
-let meetingScanTimer: number | undefined;
-let stopMeetingWatch: (() => void) | undefined;
+// 定时器键：`mtg:{日程id}` 会议开链接 / `ddl:{日程id}:{提前分钟}` 截止提醒
+const dueTimers = new Map<string, number>();
+const dueFired = new Set<string>();
+let dueScanTimer: number | undefined;
+let stopDueWatch: (() => void) | undefined;
+let stopReminderCfgWatch: (() => void) | undefined;
 
-async function scheduleMeetingLaunches() {
+// 截止时间基准（ms）：仅日期无时刻的 ddl 按当天 23:59 计
+function ddlBaseTime(s: { has_ddl: boolean; ddl_at: string | null }): number | null {
+  if (!s.has_ddl || !s.ddl_at) return null;
+  const [d, t] = s.ddl_at.split(' ');
+  const at = new Date(`${d}T${t || '23:59'}:00`).getTime();
+  return Number.isFinite(at) ? at : null;
+}
+
+function armDue(key: string, fireAt: number, fire: () => void) {
+  if (dueTimers.has(key) || dueFired.has(key)) return;
+  const delay = fireAt - Date.now();
+  if (delay <= 0 || delay > 60 * 60_000) return; // 只挂未来 1 小时内的
+  dueTimers.set(
+    key,
+    window.setTimeout(() => {
+      dueTimers.delete(key);
+      dueFired.add(key);
+      fire();
+    }, delay)
+  );
+}
+
+async function scheduleDueEvents() {
   const todayISO = toISO(new Date());
-  const now = Date.now();
   let today: Awaited<ReturnType<typeof api.listSchedules>>;
   try {
     today = await api.listSchedules(todayISO, todayISO);
   } catch {
     return;
   }
-  const eligible = new Set(
-    today
-      .filter(
-        (s) => !s.completed && s.time_of_day && s.note && MEETING_LINK_RE.test(s.note)
-      )
-      .map((s) => s.id)
-  );
-  // 已完成/被删除的：取消挂着的定时器
-  for (const [id, t] of meetingTimers) {
-    if (!eligible.has(id)) {
+  const alive = new Set(today.filter((s) => !s.completed).map((s) => s.id));
+  // 已完成/被删除的日程：取消其全部待触发定时器
+  for (const [k, t] of dueTimers) {
+    const id = Number(k.split(':')[1]);
+    if (!alive.has(id)) {
       window.clearTimeout(t);
-      meetingTimers.delete(id);
+      dueTimers.delete(k);
     }
   }
+  const reminder = configStore.config.reminder;
+  const leads = reminder?.enabled ? reminder.lead_minutes || [] : [];
   for (const s of today) {
-    if (!eligible.has(s.id) || meetingTimers.has(s.id) || meetingFired.has(s.id)) continue;
-    const link = s.note!.match(MEETING_LINK_RE)![0];
-    const fireAt = new Date(`${todayISO}T${s.time_of_day}:00`).getTime() - 5 * 60_000;
-    const delay = fireAt - now;
-    if (delay <= 0 || delay > 60 * 60_000) continue; // 只挂未来 1 小时内的场次
-    meetingTimers.set(
-      s.id,
-      window.setTimeout(() => {
-        meetingTimers.delete(s.id);
-        meetingFired.add(s.id);
-        api.openMeetingUrl(link).catch((e) => {
-          void api.appendLog(`腾讯会议唤起失败：${String(e)}`);
+    if (s.completed) continue;
+    // 1) 腾讯会议：开始前 5 分钟打开入会链接（固定）
+    if (s.time_of_day && s.note) {
+      const link = s.note.match(MEETING_LINK_RE)?.[0];
+      if (link) {
+        const fireAt = new Date(`${todayISO}T${s.time_of_day}:00`).getTime() - 5 * 60_000;
+        armDue(`mtg:${s.id}`, fireAt, () => {
+          api.openMeetingUrl(link).catch((e) => {
+            void api.appendLog(`腾讯会议唤起失败：${String(e)}`);
+          });
         });
-      }, delay)
-    );
+      }
+    }
+    // 2) 截止提醒：每档提前量各一次通知
+    const base = ddlBaseTime(s);
+    if (base !== null && leads.length) {
+      const hhmm = (s.ddl_at!.split(' ')[1] || '23:59').slice(0, 5);
+      for (const lead of leads) {
+        armDue(`ddl:${s.id}:${lead}`, base - lead * 60_000, () => {
+          notifyDdl(s.title, hhmm, lead);
+        });
+      }
+    }
   }
 }
 
-function stopMeetingLauncher() {
-  if (meetingScanTimer) window.clearInterval(meetingScanTimer);
-  for (const t of meetingTimers.values()) window.clearTimeout(t);
-  meetingTimers.clear();
-  stopMeetingWatch?.();
-  stopMeetingWatch = undefined;
+// ---- Windows 通知栏（Rust notify_summary 命令直发，AUMID 归属「桌面日程」）----
+function notifyDdl(title: string, hhmm: string, leadMinutes: number) {
+  void api
+    .notifySummary('日程即将到截止', `《${title}》将于 ${hhmm} 截止（还剩 ${leadMinutes} 分钟）`)
+    .catch(() => {
+      /* 忽略单次发送失败 */
+    });
 }
+
+function stopDueScheduler() {
+  if (dueScanTimer) window.clearInterval(dueScanTimer);
+  for (const t of dueTimers.values()) window.clearTimeout(t);
+  dueTimers.clear();
+  stopDueWatch?.();
+  stopDueWatch = undefined;
+  stopReminderCfgWatch?.();
+  stopReminderCfgWatch = undefined;
+}
+
 
 
 async function toggleLock() {
@@ -441,12 +482,17 @@ onMounted(async () => {
   unlistenMoved = await win.onMoved(() => debounceSaveGeometry());
   unlistenResized = await win.onResized(() => debounceSaveGeometry());
 
-  // 腾讯会议唤起：启动即扫 + 每小时粗扫 + 日程变动事件驱动重扫
-  void scheduleMeetingLaunches();
-  meetingScanTimer = window.setInterval(() => void scheduleMeetingLaunches(), 60 * 60_000);
-  stopMeetingWatch = watch(
+  // 到点事件调度：启动即扫 + 每小时粗扫 + 日程/提醒配置变动重扫
+  void scheduleDueEvents();
+  dueScanTimer = window.setInterval(() => void scheduleDueEvents(), 60 * 60_000);
+  stopDueWatch = watch(
     () => scheduleStore.schedules,
-    () => void scheduleMeetingLaunches(),
+    () => void scheduleDueEvents(),
+    { deep: true }
+  );
+  stopReminderCfgWatch = watch(
+    () => configStore.config.reminder,
+    () => void scheduleDueEvents(),
     { deep: true }
   );
 
@@ -480,7 +526,7 @@ onUnmounted(() => {
   unlistenDrawerAction?.();
   if (cfgBroadcastTimer) window.clearTimeout(cfgBroadcastTimer);
   if (reportTimer) window.clearInterval(reportTimer);
-  stopMeetingLauncher();
+  stopDueScheduler();
 });
 </script>
 

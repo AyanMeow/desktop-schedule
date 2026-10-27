@@ -41,6 +41,9 @@ export const api = {
   openMeetingUrl: (url: string) =>
     invoke<void>('open_meeting_url', { url }),
 
+  notifySummary: (title: string, body: string) =>
+    invoke<void>('notify_summary', { title, body }),
+
   fetchWeather: (lat: number, lon: number, city: string) =>
     invoke<Weather>('fetch_weather', { lat, lon, city }),
 

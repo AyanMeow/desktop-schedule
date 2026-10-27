@@ -490,6 +490,33 @@ async fn open_meeting_url(url: String) -> Result<(), String> {
     tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string())
 }
 
+// ---- Windows 通知栏（notify-rust 直发，AUMID 归属「桌面日程」） ----
+// tauri-plugin-notification 在 target 目录运行时不设置应用标识，会回退成
+// PowerShell 归属；便携 exe 需自行注册 AUMID（HKCU，幂等，启动时刷新图标路径）。
+fn register_toast_aumid() {
+    use winreg::enums::HKEY_CURRENT_USER;
+    const AUMID: &str = "com.zcode.schedule";
+    let Ok(exe) = std::env::current_exe() else { return };
+    let key_path = format!(r"Software\Classes\AppUserModelId\{AUMID}");
+    let Ok((key, _)) = winreg::RegKey::predef(HKEY_CURRENT_USER).create_subkey(&key_path)
+    else {
+        return;
+    };
+    let _ = key.set_value("DisplayName", &"桌面日程");
+    let _ = key.set_value("Icon", &exe.display().to_string());
+}
+
+#[tauri::command]
+fn notify_summary(title: String, body: String) -> Result<(), String> {
+    notify_rust::Notification::new()
+        .app_id("com.zcode.schedule")
+        .summary(&title)
+        .body(&body)
+        .show()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 /// 手动拉取一次天气
 #[tauri::command]
 async fn fetch_weather(lat: f64, lon: f64, city: String) -> Result<weather::Weather, String> {
@@ -755,6 +782,9 @@ pub fn run() {
             update::cleanup_leftovers(app.handle());
             update::start_check_loop(app.handle().clone());
 
+            // 注册通知栏应用标识（通知归属显示为「桌面日程」）
+            register_toast_aumid();
+
             // 窗口可见性：不在 Rust 端 show，由前端加载完成后调 show_window 命令
             // 这样用户看到的是加载完毕的正确界面，无默认值闪烁
             // 自启参数存在 AppState 供前端查询
@@ -929,6 +959,7 @@ pub fn run() {
             count_group,
             open_attachment,
             open_meeting_url,
+            notify_summary,
             fetch_weather,
             get_last_weather,
             export_schedules,

@@ -55,6 +55,14 @@ export interface AppConfig {
   encouragement: EncouragementConfig;
   weather: WeatherConfig;
   update: UpdateConfig;
+  reminder: ReminderConfig;
+}
+
+export interface ReminderConfig {
+  /** 截止提醒总开关 */
+  enabled: boolean;
+  /** 提前量（分钟）列表，如 [10, 5]，每档各提醒一次 */
+  lead_minutes: number[];
 }
 
 export interface WindowConfig {

@@ -178,6 +178,28 @@ async function onDetectProxy() {
   const r = await api.detectUpdateProxy().catch(() => null);
   detectMsg.value = r ? `检测到 ${r}` : '未检测到可用代理（将直连）';
 }
+
+// ===== 截止提醒 =====
+const REMINDER_PRESETS: Array<{ key: string; label: string; leads: number[] }> = [
+  { key: '5', label: '仅提前 5 分钟', leads: [5] },
+  { key: '10,5', label: '提前 10+5 分钟', leads: [10, 5] },
+  { key: '30,10,5', label: '提前 30+10+5 分钟', leads: [30, 10, 5] },
+];
+const reminderLeadKey = computed(() =>
+  (configStore.config.reminder?.lead_minutes || []).join(',')
+);
+async function onReminderToggle() {
+  configStore.config.reminder.enabled = !configStore.config.reminder.enabled;
+  await save();
+}
+async function onReminderLeads(e: Event) {
+  const key = (e.target as HTMLSelectElement).value;
+  const preset = REMINDER_PRESETS.find((p) => p.key === key);
+  if (preset) {
+    configStore.config.reminder.lead_minutes = [...preset.leads];
+    await save();
+  }
+}
 </script>
 
 <template>
@@ -297,6 +319,21 @@ async function onDetectProxy() {
             <span><Icon name="settings" :size="13" /> 开机自启</span>
             <input type="checkbox" class="switch" :checked="autostart" @change="(e) => onAutostart((e.target as HTMLInputElement).checked)" />
           </label>
+        </section>
+
+        <section class="group">
+          <h4><Icon name="flag" :size="14" /> 截止提醒</h4>
+          <label class="line">
+            <span><Icon name="flag" :size="13" /> 启用提醒</span>
+            <input type="checkbox" class="switch" :checked="configStore.config.reminder?.enabled" @change="onReminderToggle" />
+          </label>
+          <label class="line" v-if="configStore.config.reminder?.enabled">
+            <span>提醒频次</span>
+            <select :value="reminderLeadKey" @change="onReminderLeads">
+              <option v-for="p in REMINDER_PRESETS" :key="p.key" :value="p.key">{{ p.label }}</option>
+            </select>
+          </label>
+          <p class="tip">到点经 Windows 通知栏提醒（贴片运行时有效；仅含日期无时刻的截止按当天 23:59 计）</p>
         </section>
       </div>
 
